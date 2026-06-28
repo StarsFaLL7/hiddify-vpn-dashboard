@@ -1,0 +1,114 @@
+@page "/global-subscriptions"
+@inject SubscriptionService SubscriptionService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Общие подписки</PageTitle>
+
+<MudStack Row AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+    <MudText Typo="Typo.h5">Общие подписки</MudText>
+    <MudButton StartIcon="@Icons.Material.Filled.Add" Color="Color.Primary" Variant="Variant.Filled"
+               OnClick="AddSub">Добавить подписку</MudButton>
+</MudStack>
+
+<MudTable Items="_subs" Loading="_loading" Hover Bordered Dense>
+    <HeaderContent>
+        <MudTh>Подпись</MudTh>
+        <MudTh>URL</MudTh>
+        <MudTh>Назначена</MudTh>
+        <MudTh>Включена</MudTh>
+        <MudTh Style="text-align:right">Действия</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Подпись">@context.Label</MudTd>
+        <MudTd DataLabel="URL"><span class="url-cell">@context.Url</span></MudTd>
+        <MudTd DataLabel="Назначена">@(context.Assignments.Count) польз.</MudTd>
+        <MudTd DataLabel="Включена">
+            <MudSwitch T="bool" Value="context.IsEnabled" Color="Color.Primary"
+                       ValueChanged="@(v => ToggleEnabled(context, v))" />
+        </MudTd>
+        <MudTd Style="text-align:right">
+            <MudTooltip Text="Кому включено">
+                <MudIconButton Icon="@Icons.Material.Filled.People" Size="Size.Small"
+                               OnClick="@(() => AssignSub(context))" />
+            </MudTooltip>
+            <MudTooltip Text="Редактировать">
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                               OnClick="@(() => EditSub(context))" />
+            </MudTooltip>
+            <MudTooltip Text="Удалить">
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
+                               OnClick="@(() => DeleteSub(context))" />
+            </MudTooltip>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>Общие подписки ещё не созданы.</MudText>
+    </NoRecordsContent>
+</MudTable>
+
+@code {
+    private List<GlobalSubscription> _subs = [];
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync() => await Reload();
+
+    private async Task Reload()
+    {
+        _loading = true;
+        _subs = await SubscriptionService.GetAllGlobalAsync();
+        _loading = false;
+    }
+
+    private async Task AddSub()
+    {
+        var dialog = await DialogService.ShowAsync<GlobalSubEditDialog>("Новая общая подписка");
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: ValueTuple<string, string> data })
+        {
+            await SubscriptionService.CreateGlobalAsync(data.Item1, data.Item2);
+            Snackbar.Add("Подписка добавлена", Severity.Success);
+            await Reload();
+        }
+    }
+
+    private async Task EditSub(GlobalSubscription sub)
+    {
+        var parameters = new DialogParameters { ["Label"] = sub.Label, ["Url"] = sub.Url };
+        var dialog = await DialogService.ShowAsync<GlobalSubEditDialog>("Редактирование", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: ValueTuple<string, string> data })
+        {
+            await SubscriptionService.UpdateGlobalAsync(sub.Id, data.Item1, data.Item2, sub.IsEnabled);
+            Snackbar.Add("Сохранено", Severity.Success);
+            await Reload();
+        }
+    }
+
+    private async Task ToggleEnabled(GlobalSubscription sub, bool enabled)
+    {
+        await SubscriptionService.UpdateGlobalAsync(sub.Id, sub.Label, sub.Url, enabled);
+        sub.IsEnabled = enabled;
+    }
+
+    private async Task AssignSub(GlobalSubscription sub)
+    {
+        var parameters = new DialogParameters { ["GlobalSubscriptionId"] = sub.Id };
+        var dialog = await DialogService.ShowAsync<GlobalSubAssignDialog>($"Кому включено: {sub.Label}", parameters);
+        await dialog.Result;
+        await Reload();
+    }
+
+    private async Task DeleteSub(GlobalSubscription sub)
+    {
+        var parameters = new DialogParameters { ["Message"] = $"Удалить общую подписку «{sub.Label}»?" };
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Подтверждение", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+        {
+            await SubscriptionService.DeleteGlobalAsync(sub.Id);
+            Snackbar.Add("Удалено", Severity.Info);
+            await Reload();
+        }
+    }
+}

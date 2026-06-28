@@ -1,0 +1,115 @@
+@page "/"
+@inject UserService UserService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>Пользователи</PageTitle>
+
+<MudStack Row AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+    <MudText Typo="Typo.h5">Пользователи</MudText>
+    <MudButton StartIcon="@Icons.Material.Filled.PersonAdd" Color="Color.Primary" Variant="Variant.Filled"
+               OnClick="AddUser">Новый пользователь</MudButton>
+</MudStack>
+
+<MudTable Items="_users" Loading="_loading" Hover Bordered Dense>
+    <HeaderContent>
+        <MudTh>Имя</MudTh>
+        <MudTh>Активные привязки</MudTh>
+        <MudTh>Комментарий</MudTh>
+        <MudTh>Создан</MudTh>
+        <MudTh Style="text-align:right">Действия</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Имя">@context.Name</MudTd>
+        <MudTd DataLabel="Активные привязки">
+            <MudChip T="string" Size="Size.Small" Color="@(ActiveCount(context) > 0 ? Color.Success : Color.Default)">
+                @ActiveCount(context)
+            </MudChip>
+        </MudTd>
+        <MudTd DataLabel="Комментарий">@context.Comment</MudTd>
+        <MudTd DataLabel="Создан">@context.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy")</MudTd>
+        <MudTd Style="text-align:right">
+            <MudTooltip Text="Копировать ссылку витрины">
+                <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" Size="Size.Small"
+                               OnClick="@(() => CopyLink(context))" />
+            </MudTooltip>
+            <MudTooltip Text="Редактировать">
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                               OnClick="@(() => EditUser(context))" />
+            </MudTooltip>
+            <MudTooltip Text="Удалить">
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
+                               OnClick="@(() => DeleteUser(context))" />
+            </MudTooltip>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>Пользователи ещё не созданы.</MudText>
+    </NoRecordsContent>
+</MudTable>
+
+@code {
+    private List<LocalUser> _users = [];
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync() => await Reload();
+
+    private async Task Reload()
+    {
+        _loading = true;
+        _users = await UserService.GetAllAsync();
+        _loading = false;
+    }
+
+    private static int ActiveCount(LocalUser u) => u.Bindings.Count(b => b is { IsEnabled: true, IsBroken: false });
+
+    private string ShowcaseUrl(LocalUser u)
+    {
+        // Витрина живёт на реальном корне (вне секретного префикса админки).
+        var authority = new Uri(Nav.BaseUri).GetLeftPart(UriPartial.Authority);
+        return $"{authority}/u/{u.ShowcaseToken}";
+    }
+
+    private async Task CopyLink(LocalUser u)
+    {
+        var ok = await JS.InvokeAsync<bool>("vpnCopy", ShowcaseUrl(u));
+        Snackbar.Add(ok ? "Ссылка скопирована" : "Не удалось скопировать", ok ? Severity.Success : Severity.Error);
+    }
+
+    private async Task AddUser()
+    {
+        var dialog = await DialogService.ShowAsync<UserCreateDialog>("Новый пользователь");
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: ValueTuple<string, string?> data })
+        {
+            await UserService.CreateAsync(data.Item1, data.Item2);
+            Snackbar.Add("Пользователь создан", Severity.Success);
+            await Reload();
+        }
+    }
+
+    private async Task EditUser(LocalUser u)
+    {
+        var parameters = new DialogParameters { ["UserId"] = u.Id };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<UserEditDialog>($"Пользователь: {u.Name}", parameters, options);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: true })
+            await Reload();
+    }
+
+    private async Task DeleteUser(LocalUser u)
+    {
+        var parameters = new DialogParameters { ["Message"] = $"Удалить пользователя «{u.Name}»? Все привязки и подписки будут удалены." };
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Подтверждение", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+        {
+            await UserService.DeleteAsync(u.Id);
+            Snackbar.Add("Пользователь удалён", Severity.Info);
+            await Reload();
+        }
+    }
+}

@@ -1,0 +1,6 @@
+# Reverse-proxy с автоматическим HTTPS (Let's Encrypt).
+# Домен подставляется из переменной окружения DOMAIN (см. .env).
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy vpndashboard:8080
+}

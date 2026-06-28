@@ -1,0 +1,381 @@
+/* ============================================================
+   Boarding Pass (dark) — витрина персональных подписок
+   Каждая подписка — «пропуск» с отрывным корешком и QR.
+   ============================================================ */
+
+:root {
+    --bp-bg: #0e0f13;
+    --bp-card: #16181f;
+    --bp-stub: #1a1d25;
+    --bp-ink: #edeef2;
+    --bp-muted: #888d9c;
+    --bp-faint: #5a5f70;
+
+    --bp-gold: #f0b45a;
+    --bp-gold-soft: rgba(240, 180, 90, 0.12);
+    --bp-ok: #6fcf97;
+    --bp-line: rgba(255, 255, 255, 0.10);
+    --bp-stroke: rgba(255, 255, 255, 0.07);
+
+    --bp-radius: 18px;
+    --bp-pad: clamp(1.2rem, 4vw, 1.7rem);
+    --bp-display: "Space Grotesk", system-ui, sans-serif;
+    --bp-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bp-bg);
+    color: var(--bp-ink);
+    font-family: var(--bp-display);
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+    /* лёгкая «бумажная» фактура из тонких диагональных линий */
+    background-image: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.012) 0 2px, transparent 2px 7px);
+}
+
+.showcase-shell {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: clamp(2rem, 6vw, 4rem) clamp(1rem, 4vw, 2rem) 5rem;
+}
+
+/* ---- Шапка-пропуск ---- */
+.bp-head {
+    padding-bottom: 1.75rem;
+    margin-bottom: 1.75rem;
+    border-bottom: 1px dashed var(--bp-line);
+}
+
+.bp-head-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+}
+
+.bp-eyebrow,
+.bp-issuer {
+    font-family: var(--bp-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+}
+
+.bp-eyebrow { color: var(--bp-gold); }
+.bp-issuer { color: var(--bp-faint); }
+
+.bp-name {
+    margin: 0.9rem 0 0;
+    font-weight: 700;
+    font-size: clamp(2.4rem, 8vw, 4rem);
+    line-height: 1;
+    letter-spacing: -0.02em;
+    overflow-wrap: anywhere;
+}
+
+.bp-meta {
+    margin-top: 0.9rem;
+    font-family: var(--bp-mono);
+    font-size: 0.82rem;
+    color: var(--bp-muted);
+}
+
+.bp-meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.bp-ok-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--bp-ok);
+    box-shadow: 0 0 8px rgba(111, 207, 151, 0.7);
+}
+
+/* штрих-код — подпись стиля */
+.bp-barcode {
+    height: 34px;
+    margin-top: 1.25rem;
+    opacity: 0.45;
+    background: repeating-linear-gradient(90deg,
+        var(--bp-ink) 0 2px, transparent 2px 4px,
+        var(--bp-ink) 4px 5px, transparent 5px 9px,
+        var(--bp-ink) 9px 12px, transparent 12px 14px,
+        var(--bp-ink) 14px 15px, transparent 15px 20px);
+    -webkit-mask-image: linear-gradient(90deg, #000 70%, transparent);
+    mask-image: linear-gradient(90deg, #000 70%, transparent);
+}
+
+/* ---- Билеты ---- */
+.bp-tickets {
+    display: flex;
+    flex-direction: column;
+    gap: 1.15rem;
+}
+
+.bp-ticket {
+    position: relative;
+    display: flex;
+    align-items: stretch;
+    border-radius: var(--bp-radius);
+    background: var(--bp-card);
+    border: 1px solid var(--bp-stroke);
+    overflow: hidden;
+    box-shadow: 0 14px 36px -20px rgba(0, 0, 0, 0.9);
+    opacity: 0;
+    animation: bp-rise 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+    animation-delay: calc(var(--i, 0) * 80ms + 100ms);
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.bp-ticket:hover {
+    border-color: rgba(240, 180, 90, 0.4);
+    box-shadow: 0 20px 50px -22px rgba(0, 0, 0, 0.95);
+}
+
+/* цветной торец слева — «бренд-полоса» билета */
+.bp-ticket::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    background: var(--bp-gold);
+    opacity: 0.85;
+}
+
+.is-server::after { background: var(--bp-gold); }
+.is-manual::after { background: #7b9cff; }
+.is-shared::after { background: #b57cff; }
+
+@keyframes bp-rise {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.bp-ticket-main {
+    flex: 1;
+    min-width: 0;
+    padding: var(--bp-pad);
+    padding-left: calc(var(--bp-pad) + 6px);
+}
+
+.bp-fields {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.85rem;
+}
+
+.bp-kind {
+    font-family: var(--bp-mono);
+    font-size: 0.64rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    padding: 0.26rem 0.55rem;
+    border-radius: 5px;
+    color: var(--bp-gold);
+    background: var(--bp-gold-soft);
+}
+
+.is-manual .bp-kind { color: #9db4ff; background: rgba(123, 156, 255, 0.13); }
+.is-shared .bp-kind { color: #c79bff; background: rgba(181, 124, 255, 0.13); }
+
+.bp-valid {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-family: var(--bp-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--bp-muted);
+}
+
+.bp-title {
+    margin: 0 0 0.9rem;
+    font-size: clamp(1.25rem, 3.5vw, 1.55rem);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+.bp-fieldlabel {
+    display: block;
+    font-family: var(--bp-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--bp-faint);
+    margin-bottom: 0.4rem;
+}
+
+.bp-url {
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--bp-mono);
+    font-size: 0.8rem;
+    color: var(--bp-muted);
+    background: rgba(0, 0, 0, 0.28);
+    border: 1px solid var(--bp-stroke);
+    border-radius: 9px;
+    padding: 0.55rem 0.7rem;
+    margin-bottom: 1.05rem;
+}
+
+.bp-copy {
+    appearance: none;
+    border: 0;
+    cursor: pointer;
+    font-family: var(--bp-display);
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #1c1305;
+    padding: 0.65rem 1.2rem;
+    border-radius: 10px;
+    background: var(--bp-gold);
+    box-shadow: 0 8px 20px -10px rgba(240, 180, 90, 0.7);
+    transition: transform 0.15s ease, box-shadow 0.25s ease, filter 0.2s ease;
+}
+
+.bp-copy:hover { filter: brightness(1.06); box-shadow: 0 12px 26px -10px rgba(240, 180, 90, 0.85); }
+.bp-copy:active { transform: translateY(1px); }
+
+.bp-copy:focus-visible {
+    outline: 2px solid var(--bp-gold);
+    outline-offset: 3px;
+}
+
+.bp-copy.is-copied { filter: saturate(0.85) brightness(0.95); }
+
+/* ---- Перфорация-отрыв (сигнатура) ---- */
+.bp-perf {
+    position: relative;
+    flex: 0 0 auto;
+    align-self: stretch;
+    margin: 16px 0;
+    border-left: 2px dashed var(--bp-line);
+}
+
+.bp-perf::before,
+.bp-perf::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--bp-bg);
+    transform: translateX(-50%);
+}
+
+.bp-perf::before { top: -26px; }
+.bp-perf::after { bottom: -26px; }
+
+/* ---- Корешок с QR ---- */
+.bp-stub {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    padding: var(--bp-pad);
+    background: var(--bp-stub);
+}
+
+.bp-qr {
+    width: clamp(120px, 26vw, 148px);
+    height: auto;
+    aspect-ratio: 1;
+    border-radius: 12px;
+    background: #fff;
+    padding: 8px;
+    box-shadow: 0 8px 22px -12px rgba(0, 0, 0, 0.85);
+    image-rendering: pixelated;
+}
+
+.bp-scan {
+    font-family: var(--bp-mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--bp-faint);
+}
+
+/* ---- Инструкция ---- */
+.bp-howto {
+    display: flex;
+    gap: 0.8rem;
+    align-items: flex-start;
+    margin-top: 2rem;
+    padding: 1.05rem 1.2rem;
+    border-radius: 14px;
+    border: 1px dashed var(--bp-line);
+}
+
+.bp-howto-icon { color: var(--bp-gold); font-size: 1.15rem; line-height: 1.4; }
+
+.bp-howto p {
+    margin: 0;
+    color: var(--bp-muted);
+    font-size: 0.9rem;
+    line-height: 1.55;
+}
+
+/* ---- Пустое состояние и 404 ---- */
+.bp-empty,
+.bp-notfound {
+    text-align: center;
+    padding: clamp(3rem, 12vw, 6rem) 1rem;
+    color: var(--bp-muted);
+}
+
+.bp-empty h2 { font-size: 1.5rem; margin: 0 0 0.6rem; color: var(--bp-ink); }
+.bp-empty p { margin: 0 auto; max-width: 38ch; line-height: 1.55; }
+
+.bp-notfound { min-height: 70vh; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+
+.bp-notfound-code {
+    font-family: var(--bp-mono);
+    font-size: clamp(3.5rem, 16vw, 7rem);
+    font-weight: 600;
+    color: var(--bp-gold);
+    margin-bottom: 1rem;
+}
+
+.bp-notfound p { max-width: 34ch; line-height: 1.55; }
+
+/* ---- Мобильная адаптация: корешок уходит вниз, отрыв горизонтальный ---- */
+@media (max-width: 640px) {
+    .bp-ticket { flex-direction: column; }
+
+    .bp-perf {
+        align-self: stretch;
+        margin: 0 16px;
+        border-left: 0;
+        border-top: 2px dashed var(--bp-line);
+    }
+
+    .bp-perf::before { top: 50%; left: -26px; transform: translateY(-50%); }
+    .bp-perf::after { bottom: auto; top: 50%; left: auto; right: -26px; transform: translateY(-50%); }
+
+    .bp-stub { padding-top: calc(var(--bp-pad) + 4px); }
+    .bp-copy { width: 100%; }
+}
+
+/* ---- prefers-reduced-motion ---- */
+@media (prefers-reduced-motion: reduce) {
+    .bp-ticket { animation: none; opacity: 1; }
+}

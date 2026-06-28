@@ -1,0 +1,53 @@
+@* «Кому включено»: назначение общей подписки пользователям. *@
+@inject UserService UserService
+@inject SubscriptionService SubscriptionService
+
+<MudDialog>
+    <DialogContent>
+        @if (_users is null)
+        {
+            <MudProgressLinear Indeterminate />
+        }
+        else if (_users.Count == 0)
+        {
+            <MudText Typo="Typo.body2">Пользователи ещё не созданы.</MudText>
+        }
+        else
+        {
+            @foreach (var u in _users)
+            {
+                <MudCheckBox T="bool"
+                             Value="_assigned.Contains(u.Id)"
+                             ValueChanged="@(v => Toggle(u.Id, v))"
+                             Label="@u.Name" />
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close">Закрыть</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public Guid GlobalSubscriptionId { get; set; }
+
+    private List<LocalUser>? _users;
+    private HashSet<Guid> _assigned = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _users = await UserService.GetAllAsync();
+        _assigned = await SubscriptionService.GetAssignedUserIdsAsync(GlobalSubscriptionId);
+    }
+
+    private async Task Toggle(Guid userId, bool assigned)
+    {
+        await SubscriptionService.SetAssignmentAsync(userId, GlobalSubscriptionId, assigned);
+        if (assigned) _assigned.Add(userId);
+        else _assigned.Remove(userId);
+    }
+
+    private void Close() => MudDialog.Close(DialogResult.Ok(true));
+}

@@ -1,0 +1,33 @@
+@* Создание/редактирование общей подписки. Возвращает (label, url). *@
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <MudTextField @bind-Value="Label" Label="Подпись" Required RequiredError="Укажите подпись" />
+            <MudTextField @bind-Value="Url" Label="URL" Required RequiredError="Укажите URL" Class="mt-2" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Отмена</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Save">Сохранить</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public string Label { get; set; } = string.Empty;
+    [Parameter] public string Url { get; set; } = string.Empty;
+
+    private MudForm _form = null!;
+
+    private async Task Save()
+    {
+        await _form.ValidateAsync();
+        if (!_form.IsValid)
+            return;
+        MudDialog.Close(DialogResult.Ok((Label.Trim(), Url.Trim())));
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

@@ -1,0 +1,259 @@
+@* Редактирование пользователя: основное, привязки к серверам, ручные и общие подписки. *@
+@inject UserService UserService
+@inject BindingService BindingService
+@inject SubscriptionService SubscriptionService
+@inject ServerService ServerService
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        @if (_user is null)
+        {
+            <MudProgressLinear Indeterminate />
+        }
+        else
+        {
+            <MudTabs Elevation="0" Rounded ApplyEffectsToContainer TabPanelsClass="pt-4">
+                <MudTabPanel Text="Основное">
+                    <MudTextField @bind-Value="_name" Label="Имя" Required />
+                    <MudTextField @bind-Value="_comment" Label="Комментарий" Lines="2" Class="mt-2" />
+                    <MudButton Color="Color.Primary" Variant="Variant.Filled" Class="mt-3" OnClick="SaveBasic">
+                        Сохранить
+                    </MudButton>
+
+                    <MudDivider Class="my-4" />
+                    <MudText Typo="Typo.subtitle2">Токен витрины</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        Перевыпуск немедленно ломает старую ссылку витрины.
+                    </MudText>
+                    <MudButton StartIcon="@Icons.Material.Filled.Autorenew" Color="Color.Warning"
+                               Variant="Variant.Outlined" Class="mt-2" OnClick="RegenerateToken">
+                        Перевыпустить токен
+                    </MudButton>
+                </MudTabPanel>
+
+                <MudTabPanel Text="@($"Привязки ({_user.Bindings.Count})")">
+                    <MudButton StartIcon="@Icons.Material.Filled.AddLink" Color="Color.Primary"
+                               Variant="Variant.Filled" Class="mb-3" OnClick="AddBinding">
+                        Добавить привязку
+                    </MudButton>
+                    <MudSimpleTable Dense Bordered>
+                        <thead>
+                            <tr><th>Сервер</th><th>UUID</th><th>Вкл.</th><th>Статус</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var b in _user.Bindings)
+                            {
+                                <tr>
+                                    <td>@b.HiddifyServer.Name</td>
+                                    <td><code>@Shorten(b.HiddifyUuid)</code></td>
+                                    <td>
+                                        <MudSwitch T="bool" Value="b.IsEnabled" Color="Color.Primary"
+                                                   ValueChanged="@(v => ToggleBinding(b, v))" />
+                                    </td>
+                                    <td>
+                                        @if (b.IsBroken)
+                                        {
+                                            <MudChip T="string" Color="Color.Error" Size="Size.Small">broken</MudChip>
+                                        }
+                                        else
+                                        {
+                                            <MudChip T="string" Color="Color.Success" Size="Size.Small">ok</MudChip>
+                                        }
+                                    </td>
+                                    <td>
+                                        <MudIconButton Icon="@Icons.Material.Filled.LinkOff" Size="Size.Small"
+                                                       Color="Color.Error" OnClick="@(() => RemoveBinding(b))" />
+                                    </td>
+                                </tr>
+                            }
+                            @if (_user.Bindings.Count == 0)
+                            {
+                                <tr><td colspan="5"><MudText Typo="Typo.body2">Нет привязок.</MudText></td></tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </MudTabPanel>
+
+                <MudTabPanel Text="@($"Ручные ссылки ({_user.ManualSubscriptions.Count})")">
+                    <MudStack Row Spacing="2" AlignItems="AlignItems.Center" Class="mb-3">
+                        <MudTextField @bind-Value="_newManualLabel" Label="Подпись" Margin="Margin.Dense" />
+                        <MudTextField @bind-Value="_newManualUrl" Label="URL" Margin="Margin.Dense" />
+                        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="AddManual">Добавить</MudButton>
+                    </MudStack>
+                    <MudSimpleTable Dense Bordered>
+                        <thead>
+                            <tr><th>Подпись</th><th>URL</th><th>Вкл.</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var m in _user.ManualSubscriptions)
+                            {
+                                <tr>
+                                    <td>@m.Label</td>
+                                    <td><span class="url-cell">@m.Url</span></td>
+                                    <td>
+                                        <MudSwitch T="bool" Value="m.IsEnabled" Color="Color.Primary"
+                                                   ValueChanged="@(v => ToggleManual(m, v))" />
+                                    </td>
+                                    <td>
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                                       Color="Color.Error" OnClick="@(() => RemoveManual(m))" />
+                                    </td>
+                                </tr>
+                            }
+                            @if (_user.ManualSubscriptions.Count == 0)
+                            {
+                                <tr><td colspan="4"><MudText Typo="Typo.body2">Нет ручных ссылок.</MudText></td></tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </MudTabPanel>
+
+                <MudTabPanel Text="Общие подписки">
+                    @if (_allGlobals.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2">Общие подписки ещё не созданы.</MudText>
+                    }
+                    else
+                    {
+                        @foreach (var g in _allGlobals)
+                        {
+                            <MudCheckBox T="bool"
+                                         Value="_assignedGlobalIds.Contains(g.Id)"
+                                         ValueChanged="@(v => ToggleGlobal(g.Id, v))"
+                                         Label="@($"{g.Label}{(g.IsEnabled ? "" : " (выключена глобально)")}")" />
+                        }
+                    }
+                </MudTabPanel>
+            </MudTabs>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close">Закрыть</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public Guid UserId { get; set; }
+
+    private LocalUser? _user;
+    private List<HiddifyServer> _allServers = [];
+    private List<GlobalSubscription> _allGlobals = [];
+    private HashSet<Guid> _assignedGlobalIds = [];
+    private bool _changed;
+
+    private string _name = string.Empty;
+    private string? _comment;
+    private string _newManualLabel = string.Empty;
+    private string _newManualUrl = string.Empty;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        _user = await UserService.GetWithRelationsAsync(UserId);
+        _allServers = await ServerService.GetAllAsync();
+        _allGlobals = await SubscriptionService.GetAllGlobalAsync();
+        _assignedGlobalIds = await SubscriptionService.GetAssignedGlobalIdsAsync(UserId);
+        if (_user is not null)
+        {
+            _name = _user.Name;
+            _comment = _user.Comment;
+        }
+    }
+
+    private async Task SaveBasic()
+    {
+        if (string.IsNullOrWhiteSpace(_name))
+        {
+            Snackbar.Add("Имя не может быть пустым", Severity.Warning);
+            return;
+        }
+        await UserService.UpdateBasicAsync(UserId, _name, _comment);
+        _changed = true;
+        Snackbar.Add("Сохранено", Severity.Success);
+    }
+
+    private async Task RegenerateToken()
+    {
+        await UserService.RegenerateTokenAsync(UserId);
+        _changed = true;
+        Snackbar.Add("Токен витрины перевыпущен", Severity.Success);
+    }
+
+    private async Task AddBinding()
+    {
+        var boundServerIds = _user!.Bindings.Select(b => b.HiddifyServerId).ToHashSet();
+        var available = _allServers.Where(s => !boundServerIds.Contains(s.Id)).ToList();
+        var parameters = new DialogParameters
+        {
+            ["LocalUserId"] = UserId,
+            ["AvailableServers"] = available
+        };
+        var dialog = await DialogService.ShowAsync<AddBindingDialog>("Новая привязка", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+        {
+            await Load();
+            _changed = true;
+            Snackbar.Add("Привязка добавлена", Severity.Success);
+        }
+    }
+
+    private async Task ToggleBinding(UserServerBinding b, bool enabled)
+    {
+        await BindingService.SetEnabledAsync(b.Id, enabled);
+        b.IsEnabled = enabled;
+        _changed = true;
+    }
+
+    private async Task RemoveBinding(UserServerBinding b)
+    {
+        await BindingService.RemoveAsync(b.Id);
+        await Load();
+        _changed = true;
+    }
+
+    private async Task AddManual()
+    {
+        if (string.IsNullOrWhiteSpace(_newManualLabel) || string.IsNullOrWhiteSpace(_newManualUrl))
+        {
+            Snackbar.Add("Заполните подпись и URL", Severity.Warning);
+            return;
+        }
+        await SubscriptionService.AddManualAsync(UserId, _newManualLabel, _newManualUrl);
+        _newManualLabel = string.Empty;
+        _newManualUrl = string.Empty;
+        await Load();
+        _changed = true;
+    }
+
+    private async Task ToggleManual(ManualSubscription m, bool enabled)
+    {
+        await SubscriptionService.UpdateManualAsync(m.Id, m.Label, m.Url, enabled);
+        m.IsEnabled = enabled;
+        _changed = true;
+    }
+
+    private async Task RemoveManual(ManualSubscription m)
+    {
+        await SubscriptionService.RemoveManualAsync(m.Id);
+        await Load();
+        _changed = true;
+    }
+
+    private async Task ToggleGlobal(Guid globalId, bool assigned)
+    {
+        await SubscriptionService.SetAssignmentAsync(UserId, globalId, assigned);
+        if (assigned) _assignedGlobalIds.Add(globalId);
+        else _assignedGlobalIds.Remove(globalId);
+        _changed = true;
+    }
+
+    private static string Shorten(string uuid) => uuid.Length > 12 ? uuid[..8] + "…" : uuid;
+
+    private void Close() => MudDialog.Close(DialogResult.Ok(_changed));
+}

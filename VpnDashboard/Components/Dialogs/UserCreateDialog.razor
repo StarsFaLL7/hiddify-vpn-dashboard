@@ -1,0 +1,32 @@
+@* Создание нового локального пользователя. *@
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <MudTextField @bind-Value="_name" Label="Имя" Required RequiredError="Укажите имя" />
+            <MudTextField @bind-Value="_comment" Label="Комментарий" Lines="2" Class="mt-2" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Отмена</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Save">Создать</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    private MudForm _form = null!;
+    private string _name = string.Empty;
+    private string? _comment;
+
+    private async Task Save()
+    {
+        await _form.ValidateAsync();
+        if (!_form.IsValid)
+            return;
+        MudDialog.Close(DialogResult.Ok((_name, _comment)));
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

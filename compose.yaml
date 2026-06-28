@@ -1,0 +1,46 @@
+services:
+  vpndashboard:
+    image: vpndashboard
+    build:
+      context: .
+      dockerfile: VpnDashboard/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Контейнер слушает только HTTP внутри docker-сети; TLS терминирует Caddy.
+      ASPNETCORE_URLS: "http://+:8080"
+      ASPNETCORE_ENVIRONMENT: "Production"
+    expose:
+      - "8080"
+    volumes:
+      # Персистентность SQLite-файла.
+      - vpndashboard-data:/data
+    networks:
+      - web
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - vpndashboard
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Домен берётся из .env — Caddy сам получит и продлит TLS-сертификат Let's Encrypt.
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - web
+
+networks:
+  web:
+
+volumes:
+  vpndashboard-data:
+  caddy-data:
+  caddy-config:

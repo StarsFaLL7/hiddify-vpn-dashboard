@@ -1,0 +1,134 @@
+@page "/servers"
+@inject ServerService ServerService
+@inject IHiddifyApiClient Hiddify
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Серверы</PageTitle>
+
+<MudStack Row AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+    <MudText Typo="Typo.h5">Серверы Hiddify</MudText>
+    <MudButton StartIcon="@Icons.Material.Filled.Add" Color="Color.Primary" Variant="Variant.Filled"
+               OnClick="AddServer">Добавить сервер</MudButton>
+</MudStack>
+
+<MudTable Items="_servers" Loading="_loading" Hover Bordered Dense>
+    <HeaderContent>
+        <MudTh>Имя</MudTh>
+        <MudTh>Домен</MudTh>
+        <MudTh>Статус</MudTh>
+        <MudTh Style="text-align:right">Действия</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Имя">@context.Name</MudTd>
+        <MudTd DataLabel="Домен">@context.Domain</MudTd>
+        <MudTd DataLabel="Статус">
+            <PingStatusIndicator IsOnline="context.IsOnline" LastPingAt="context.LastPingAt" />
+        </MudTd>
+        <MudTd Style="text-align:right">
+            <MudTooltip Text="Проверить связь">
+                <MudIconButton Icon="@Icons.Material.Filled.NetworkPing" Size="Size.Small"
+                               OnClick="@(() => TestConnection(context))" />
+            </MudTooltip>
+            <MudTooltip Text="Обновить с сервера">
+                <MudIconButton Icon="@Icons.Material.Filled.Sync" Size="Size.Small"
+                               OnClick="@(() => SyncServer(context))" />
+            </MudTooltip>
+            <MudTooltip Text="Редактировать">
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                               OnClick="@(() => EditServer(context))" />
+            </MudTooltip>
+            <MudTooltip Text="Удалить">
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
+                               OnClick="@(() => DeleteServer(context))" />
+            </MudTooltip>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>Серверы ещё не добавлены.</MudText>
+    </NoRecordsContent>
+</MudTable>
+
+@code {
+    private List<HiddifyServer> _servers = [];
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync() => await Reload();
+
+    private async Task Reload()
+    {
+        _loading = true;
+        _servers = await ServerService.GetAllAsync();
+        _loading = false;
+    }
+
+    private async Task AddServer()
+    {
+        var parameters = new DialogParameters { ["Model"] = new HiddifyServer() };
+        var dialog = await DialogService.ShowAsync<ServerEditDialog>("Новый сервер", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: HiddifyServer server })
+        {
+            await ServerService.CreateAsync(server);
+            Snackbar.Add("Сервер добавлен", Severity.Success);
+            await Reload();
+        }
+    }
+
+    private async Task EditServer(HiddifyServer server)
+    {
+        // Редактируем копию, чтобы отмена не меняла строку в таблице.
+        var copy = new HiddifyServer
+        {
+            Id = server.Id,
+            Name = server.Name,
+            Domain = server.Domain,
+            AdminProxyPath = server.AdminProxyPath,
+            ClientProxyPath = server.ClientProxyPath,
+            AdminUuid = server.AdminUuid
+        };
+        var parameters = new DialogParameters { ["Model"] = copy };
+        var dialog = await DialogService.ShowAsync<ServerEditDialog>("Редактирование сервера", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: HiddifyServer edited })
+        {
+            await ServerService.UpdateAsync(edited);
+            Snackbar.Add("Сервер обновлён", Severity.Success);
+            await Reload();
+        }
+    }
+
+    private async Task DeleteServer(HiddifyServer server)
+    {
+        var parameters = new DialogParameters
+        {
+            ["Message"] = $"Удалить сервер «{server.Name}» и все привязки к нему?"
+        };
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Подтверждение", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+        {
+            await ServerService.DeleteAsync(server.Id);
+            Snackbar.Add("Сервер удалён", Severity.Info);
+            await Reload();
+        }
+    }
+
+    private async Task SyncServer(HiddifyServer server)
+    {
+        var parameters = new DialogParameters { ["ServerId"] = server.Id };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<ServerSyncDialog>($"Синхронизация: {server.Name}", parameters, options);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: true })
+            await Reload();
+    }
+
+    private async Task TestConnection(HiddifyServer server)
+    {
+        var online = await Hiddify.PingAsync(server);
+        Snackbar.Add(
+            online ? $"«{server.Name}»: связь есть" : $"«{server.Name}»: сервер недоступен",
+            online ? Severity.Success : Severity.Error);
+    }
+}

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <base href="@BaseHref"/>
+    <ResourcePreloader/>
+    <link rel="stylesheet" href="@Assets["app.css"]"/>
+    <link rel="stylesheet" href="@Assets["VpnDashboard.styles.css"]"/>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet" />
+    @if (IsShowcase)
+    {
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+        <link rel="stylesheet" href="@Assets["css/showcase.css"]"/>
+    }
+    else
+    {
+        <link href="@Assets["_content/MudBlazor/MudBlazor.min.css"]" rel="stylesheet" />
+    }
+    <ImportMap/>
+    <HeadOutlet/>
+</head>
+
+<body>
+@* Глобальный интерактивный режим: layout с MudBlazor-провайдерами тоже интерактивен,
+   иначе диалоги/снэкбары из страниц не рендерятся. Логин и витрина остаются статикой —
+   они просто не подгружают blazor.web.js (circuit не стартует). *@
+<Routes @rendermode="InteractiveServer" />
+@if (IsShowcase)
+{
+    @* Витрина — статика: QR генерится на сервере, JS нужен только для копирования. *@
+    <script src="@Assets["js/showcase.js"]"></script>
+}
+else if (!IsLogin)
+{
+    @* Админка — интерактивный circuit + MudBlazor + clipboard. *@
+    <ReconnectModal/>
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script src="@Assets["_content/MudBlazor/MudBlazor.min.js"]"></script>
+    <script src="@Assets["js/clipboard.js"]"></script>
+}
+</body>
+
+</html>
+
+@code {
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    // База учитывает секретный префикс админки (PathBase), для витрины/корня — "/".
+    private string BaseHref
+    {
+        get
+        {
+            var pathBase = HttpContext?.Request.PathBase.Value;
+            return string.IsNullOrEmpty(pathBase) ? "/" : $"{pathBase}/";
+        }
+    }
+
+    // Витрина обслуживается на реальном корне по пути /u/...
+    private bool IsShowcase =>
+        HttpContext?.Request.Path.Value?.StartsWith("/u/", StringComparison.OrdinalIgnoreCase) == true;
+
+    // Страница логина — статическая форма, circuit ей не нужен.
+    private bool IsLogin =>
+        HttpContext?.Request.Path.Value?.Equals("/login", StringComparison.OrdinalIgnoreCase) == true;
+}

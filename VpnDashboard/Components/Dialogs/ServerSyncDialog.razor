@@ -1,0 +1,126 @@
+@* Синхронизация с сервером: broken-привязки и непривязанные Hiddify-юзеры. *@
+@inject ServerService ServerService
+@inject UserService UserService
+@inject BindingService BindingService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        @if (_loading)
+        {
+            <MudStack Row AlignItems="AlignItems.Center" Spacing="2">
+                <MudProgressCircular Size="Size.Small" Indeterminate />
+                <MudText>Обновление с сервера…</MudText>
+            </MudStack>
+        }
+        else if (_result is { Success: false })
+        {
+            <MudAlert Severity="Severity.Error">@_result.Error</MudAlert>
+        }
+        else if (_result is not null)
+        {
+            @if (_result.BrokenCount > 0)
+            {
+                <MudAlert Severity="Severity.Warning" Class="mb-3">
+                    Broken-привязок: @_result.BrokenCount (UUID не найден на сервере). Проверьте их в карточках пользователей.
+                </MudAlert>
+            }
+            else
+            {
+                <MudAlert Severity="Severity.Success" Class="mb-3">Broken-привязок нет.</MudAlert>
+            }
+
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Непривязанные Hiddify-юзеры (@_unbound.Count)</MudText>
+            @if (_unbound.Count == 0)
+            {
+                <MudText Typo="Typo.body2">Все юзеры сервера уже привязаны.</MudText>
+            }
+            else
+            {
+                <MudSimpleTable Dense Bordered>
+                    <thead>
+                        <tr><th>Имя</th><th>UUID</th><th>Привязать к</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var u in _unbound)
+                        {
+                            <tr>
+                                <td>@u.Name</td>
+                                <td><code>@Shorten(u.Uuid)</code></td>
+                                <td>
+                                    <MudSelect T="Guid" @bind-Value="_selection[u.Uuid]" Dense Margin="Margin.Dense"
+                                               Placeholder="Выбрать">
+                                        @foreach (var lu in _users)
+                                        {
+                                            <MudSelectItem T="Guid" Value="lu.Id">@lu.Name</MudSelectItem>
+                                        }
+                                    </MudSelect>
+                                </td>
+                                <td>
+                                    <MudButton Size="Size.Small" Color="Color.Primary" Variant="Variant.Filled"
+                                               OnClick="@(() => Bind(u))">Привязать</MudButton>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close">Закрыть</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public Guid ServerId { get; set; }
+
+    private bool _loading = true;
+    private ServerSyncResult? _result;
+    private List<UnboundHiddifyUser> _unbound = [];
+    private List<LocalUser> _users = [];
+    private readonly Dictionary<string, Guid> _selection = new();
+    private bool _changed;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _users = await UserService.GetAllAsync();
+        _result = await ServerService.SyncAsync(ServerId);
+        if (_result.Success)
+        {
+            _unbound = _result.Unbound.ToList();
+            foreach (var u in _unbound)
+                _selection[u.Uuid] = Guid.Empty;
+        }
+        _changed = _result.Success;
+        _loading = false;
+    }
+
+    private async Task Bind(UnboundHiddifyUser u)
+    {
+        if (!_selection.TryGetValue(u.Uuid, out var userId) || userId == Guid.Empty)
+        {
+            Snackbar.Add("Выберите пользователя", Severity.Warning);
+            return;
+        }
+
+        var result = await BindingService.BindExistingAsync(userId, ServerId, u.Uuid);
+        if (result.Success)
+        {
+            _unbound.Remove(u);
+            _selection.Remove(u.Uuid);
+            _changed = true;
+            Snackbar.Add("Привязка создана", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add(result.Error ?? "Не удалось привязать", Severity.Error);
+        }
+    }
+
+    private static string Shorten(string uuid) => uuid.Length > 12 ? uuid[..8] + "…" : uuid;
+
+    private void Close() => MudDialog.Close(DialogResult.Ok(_changed));
+}

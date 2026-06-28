@@ -1,0 +1,18 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VpnDashboard", "VpnDashboard\VpnDashboard.csproj", "{47C17982-C9BE-42CE-B25F-DCC2011C4DFF}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{CA5A7C95-2CC7-4063-A473-BD8220134CC7}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{47C17982-C9BE-42CE-B25F-DCC2011C4DFF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{47C17982-C9BE-42CE-B25F-DCC2011C4DFF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{47C17982-C9BE-42CE-B25F-DCC2011C4DFF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{47C17982-C9BE-42CE-B25F-DCC2011C4DFF}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

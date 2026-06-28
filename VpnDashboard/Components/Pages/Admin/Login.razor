@@ -1,0 +1,43 @@
+@page "/login"
+@layout VpnDashboard.Components.Layout.MinimalLayout
+@using Microsoft.AspNetCore.Antiforgery
+@inject IAntiforgery Antiforgery
+
+<PageTitle>Вход</PageTitle>
+
+<div class="login-card">
+    <h1>VPN Dashboard</h1>
+    <p class="login-sub">Вход в админ-панель</p>
+
+    <form method="post" action="auth/login">
+        <input type="hidden" name="__RequestVerificationToken" value="@_token" />
+
+        <label class="login-label" for="password">Пароль</label>
+        <input id="password" name="password" type="password" class="login-input" autofocus autocomplete="current-password" />
+
+        @if (HasError)
+        {
+            <p class="login-error">Неверный пароль.</p>
+        }
+
+        <button type="submit" class="login-button">Войти</button>
+    </form>
+</div>
+
+@code {
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = null!;
+
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? Error { get; set; }
+
+    private string _token = string.Empty;
+
+    private bool HasError => Error == "1";
+
+    protected override void OnInitialized()
+    {
+        // Генерируем и сохраняем antiforgery-токен (ставит cookie), значение кладём в скрытое поле.
+        _token = Antiforgery.GetAndStoreTokens(HttpContext).RequestToken ?? string.Empty;
+    }
+}

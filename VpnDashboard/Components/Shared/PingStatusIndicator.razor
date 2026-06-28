@@ -1,0 +1,31 @@
+@* Индикатор пинг-статуса сервера: online / offline / неизвестно. *@
+
+<MudTooltip Text="@TooltipText">
+    <span class="d-inline-flex align-center gap-1">
+        <MudIcon Icon="@Icons.Material.Filled.Circle" Color="@Color" Size="Size.Small" />
+        <MudText Typo="Typo.body2">@Label</MudText>
+    </span>
+</MudTooltip>
+
+@code {
+    [Parameter] public bool? IsOnline { get; set; }
+    [Parameter] public DateTime? LastPingAt { get; set; }
+
+    private Color Color => IsOnline switch
+    {
+        true => Color.Success,
+        false => Color.Error,
+        null => Color.Default
+    };
+
+    private string Label => IsOnline switch
+    {
+        true => "Online",
+        false => "Offline",
+        null => "—"
+    };
+
+    private string TooltipText => LastPingAt is { } t
+        ? $"Последняя проверка: {t.ToLocalTime():g}"
+        : "Ещё не проверялся";
+}

@@ -1,0 +1,20 @@
+@inject NavigationManager Nav
+
+<MudNavMenu Rounded="true" Margin="Margin.Dense" Class="pa-2">
+    <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.People">Пользователи</MudNavLink>
+    <MudNavLink Href="servers" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Dns">Серверы</MudNavLink>
+    <MudNavLink Href="global-subscriptions" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Link">Общие подписки</MudNavLink>
+    <MudDivider Class="my-2" />
+    <MudButton FullWidth
+               StartIcon="@Icons.Material.Filled.Logout"
+               Class="justify-start px-4 py-2"
+               Style="text-transform:none;"
+               OnClick="Logout">
+        Выход
+    </MudButton>
+</MudNavMenu>
+
+@code {
+    // forceLoad обходит клиентский роутер Blazor и реально дёргает GET /auth/logout.
+    private void Logout() => Nav.NavigateTo("auth/logout", forceLoad: true);
+}

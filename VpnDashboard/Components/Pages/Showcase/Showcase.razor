@@ -1,0 +1,135 @@
+@page "/u/{Token}"
+@layout VpnDashboard.Components.Layout.ShowcaseLayout
+@using Microsoft.Extensions.Options
+@using QRCoder
+@using VpnDashboard.Options
+@inject ShowcaseService ShowcaseService
+@inject IOptions<ShowcaseOptions> ShowcaseOptions
+
+@if (_model is null)
+{
+    <PageTitle>Не найдено</PageTitle>
+    <main class="bp-notfound">
+        <span class="bp-notfound-code">404</span>
+        <p>Такой страницы нет. Проверьте ссылку или попросите новую у администратора.</p>
+    </main>
+}
+else
+{
+    <PageTitle>Подключения — @_model.UserName</PageTitle>
+
+    <main class="bp-page">
+        <header class="bp-head">
+            <div class="bp-head-top">
+                <span class="bp-eyebrow">ЛИЧНЫЙ ДОСТУП VPN</span>
+            </div>
+            <h1 class="bp-name">@_model.UserName</h1>
+            <div class="bp-meta">
+                <span class="bp-meta-item"><span class="bp-ok-dot" aria-hidden="true"></span>@CountLabel(_model.Links.Count)</span>
+            </div>
+        </header>
+
+        @if (_model.Links.Count == 0)
+        {
+            <section class="bp-empty">
+                <h2>Пока пусто</h2>
+                <p>Здесь появятся ваши подключения, как только администратор их добавит. Напишите ему, если ждёте доступ.</p>
+            </section>
+        }
+        else
+        {
+            <section class="bp-tickets">
+                @{
+                    var i = 0;
+                }
+                @foreach (var link in _model.Links)
+                {
+                    <article class="bp-ticket @KindClass(link.Kind)" style="--i: @i">
+                        <div class="bp-ticket-main">
+                            <div class="bp-fields">
+                                <span class="bp-kind">@KindLabel(link.Kind)</span>
+                                <span class="bp-valid"><span class="bp-ok-dot" aria-hidden="true"></span>Активно</span>
+                            </div>
+                            <h2 class="bp-title">@link.Label</h2>
+                            <span class="bp-fieldlabel">Адрес подписки</span>
+                            <code class="bp-url">@link.Url</code>
+                            <button class="bp-copy" data-copy="@link.Url" type="button">
+                                <span class="sc-copy-label">Скопировать ссылку</span>
+                            </button>
+                        </div>
+
+                        <div class="bp-perf" aria-hidden="true"></div>
+
+                        <div class="bp-stub">
+                            <img class="bp-qr" src="@QrDataUri(link.Url)" alt="QR-код для @link.Label" width="160" height="160" />
+                            <span class="bp-scan">QR-код</span>
+                        </div>
+                    </article>
+                    i++;
+                }
+            </section>
+
+            <footer class="bp-howto">
+                <span class="bp-howto-icon" aria-hidden="true">↳</span>
+                <p>@ShowcaseOptions.Value.Instructions</p>
+            </footer>
+        }
+    </main>
+}
+
+@code {
+    [Parameter] public string Token { get; set; } = string.Empty;
+
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = null!;
+
+    private ShowcaseModel? _model;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Поисковикам не индексировать витрину.
+        HttpContext.Response.Headers["X-Robots-Tag"] = "noindex, nofollow";
+
+        _model = await ShowcaseService.GetByTokenAsync(Token);
+        if (_model is null)
+            HttpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+    }
+
+    private static string KindLabel(ShowcaseLinkKind kind) => kind switch
+    {
+        ShowcaseLinkKind.Server => "Сервер",
+        ShowcaseLinkKind.Manual => "Ссылка",
+        ShowcaseLinkKind.Shared => "Общая",
+        _ => ""
+    };
+
+    private static string KindClass(ShowcaseLinkKind kind) => kind switch
+    {
+        ShowcaseLinkKind.Server => "is-server",
+        ShowcaseLinkKind.Manual => "is-manual",
+        ShowcaseLinkKind.Shared => "is-shared",
+        _ => ""
+    };
+
+    // «1 подключение / 2 подключения / 5 подключений»
+    private static string CountLabel(int n)
+    {
+        var word = (n % 100 is >= 11 and <= 14)
+            ? "подключений"
+            : (n % 10) switch
+            {
+                1 => "подключение",
+                2 or 3 or 4 => "подключения",
+                _ => "подключений"
+            };
+        return $"{n} {word}";
+    }
+
+    // Серверная генерация QR (PngByteQRCode — кроссплатформенно, без System.Drawing).
+    private static string QrDataUri(string text)
+    {
+        using var generator = new QRCodeGenerator();
+        using var data = generator.CreateQrCode(text, QRCodeGenerator.ECCLevel.M);
+        var png = new PngByteQRCode(data).GetGraphic(6);
+        return $"data:image/png;base64,{Convert.ToBase64String(png)}";
+    }
+}

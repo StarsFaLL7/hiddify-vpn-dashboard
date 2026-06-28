@@ -1,0 +1,106 @@
+@* Диалог добавления привязки пользователя к серверу: к существующему UUID или создать через API. *@
+@inject BindingService BindingService
+
+<MudDialog>
+    <DialogContent>
+        @if (AvailableServers.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info">Пользователь уже привязан ко всем серверам, либо серверы не добавлены.</MudAlert>
+        }
+        else
+        {
+            <MudSelect T="Guid" @bind-Value="_serverId" Label="Сервер" Required>
+                @foreach (var s in AvailableServers)
+                {
+                    <MudSelectItem T="Guid" Value="s.Id">@s.Name (@s.Domain)</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudRadioGroup T="BindMode" @bind-Value="_mode" Class="mt-4">
+                <MudRadio T="BindMode" Value="BindMode.Existing">Привязать к существующему UUID</MudRadio>
+                <MudRadio T="BindMode" Value="BindMode.CreateViaApi">Создать нового через API</MudRadio>
+            </MudRadioGroup>
+
+            @if (_mode == BindMode.Existing)
+            {
+                <MudTextField @bind-Value="_uuid" Label="Hiddify UUID" Class="mt-2"
+                              HelperText="UUID существующего пользователя на этом сервере" />
+            }
+            else
+            {
+                <MudNumericField @bind-Value="_packageDays" Label="Срок (дней)" Min="1" Class="mt-2" />
+                <MudNumericField @bind-Value="_usageLimitGb" Label="Лимит трафика (ГБ)" Min="0" />
+            }
+
+            @if (_error is not null)
+            {
+                <MudAlert Severity="Severity.Error" Class="mt-3">@_error</MudAlert>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Отмена</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="_busy || AvailableServers.Count == 0"
+                   OnClick="Submit">
+            @if (_busy)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate />
+            }
+            else
+            {
+                <text>Привязать</text>
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public Guid LocalUserId { get; set; }
+    [Parameter] public List<HiddifyServer> AvailableServers { get; set; } = [];
+
+    private enum BindMode { Existing, CreateViaApi }
+
+    private Guid _serverId;
+    private BindMode _mode = BindMode.Existing;
+    private string _uuid = string.Empty;
+    private int _packageDays = 365;
+    private double _usageLimitGb = 100;
+    private bool _busy;
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        if (AvailableServers.Count > 0)
+            _serverId = AvailableServers[0].Id;
+    }
+
+    private async Task Submit()
+    {
+        _error = null;
+        if (_serverId == Guid.Empty)
+        {
+            _error = "Выберите сервер";
+            return;
+        }
+        if (_mode == BindMode.Existing && string.IsNullOrWhiteSpace(_uuid))
+        {
+            _error = "Укажите UUID";
+            return;
+        }
+
+        _busy = true;
+        var result = _mode == BindMode.Existing
+            ? await BindingService.BindExistingAsync(LocalUserId, _serverId, _uuid)
+            : await BindingService.CreateViaApiAsync(LocalUserId, _serverId, _packageDays, _usageLimitGb);
+        _busy = false;
+
+        if (result.Success)
+            MudDialog.Close(DialogResult.Ok(true));
+        else
+            _error = result.Error;
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}
