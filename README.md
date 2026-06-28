@@ -15,8 +15,7 @@
 затем:
 
 ```bash
-git clone <repo-url> vpndashboard && cd vpndashboard
-sudo bash deploy.sh
+git clone https://github.com/StarsFaLL7/hiddify-vpn-dashboard.git vpn-dashboard && cd vpn-dashboard && sudo bash deploy.sh
 ```
 
 Скрипт сам: поставит Docker, спросит домен и пароль администратора, сгенерирует секретный путь
