@@ -9,46 +9,6 @@
 
 Стек: .NET 10, Blazor Server (InteractiveServer) + MudBlazor, EF Core + SQLite, Serilog, Docker.
 
-## Архитектура (коротко)
-
-- Локальная БД хранит пользователей, серверы, привязки, ручные и общие подписки. Источник правды
-  по VPN-конфигам остаётся за панелями Hiddify; приватные ключи у нас **не хранятся**.
-- Один локальный пользователь имеет разные UUID на разных серверах (привязка `(ServerId, Uuid)`).
-- Витрина рендерится как статический SSR-компонент без Blazor-circuit — открывается быстро и
-  работает даже при недоступном SignalR. QR генерируется на сервере (QRCoder).
-- Админка спрятана за секретным путём `/{guid1}/{guid2}/…` (первый барьер) и закрыта
-  cookie-аутентификацией с паролем (PBKDF2). Без авторизации — редирект на логин; обращение к
-  админ-путям без секрета — нейтральный 404.
-
-## Конфигурация
-
-Все секреты задаются через переменные окружения (см. [`.env.example`](.env.example)):
-
-| Переменная | Назначение |
-|---|---|
-| `Admin__SecretPathSegment1` / `…Segment2` | Два GUID-сегмента секретного пути админки |
-| `Admin__PasswordHash` / `Admin__PasswordSalt` | PBKDF2-хеш и соль пароля админа (base64) |
-| `ConnectionStrings__DefaultConnection` | Строка подключения SQLite (в Docker по умолчанию `/data/vpndashboard.db`) |
-| `Ping__IntervalMinutes` / `…TimeoutSeconds` / `…Enabled` | Параметры фонового пинга (необязательно) |
-
-### Сгенерировать хеш пароля
-
-```bash
-dotnet run --project VpnDashboard -- hash-password "ВАШ_ПАРОЛЬ"
-# выведет строки Admin__PasswordHash=… и Admin__PasswordSalt=… — скопируйте в .env
-```
-
-В контейнере (ENTRYPOINT уже `dotnet VpnDashboard.dll`):
-
-```bash
-docker compose run --rm --no-deps vpndashboard hash-password "ВАШ_ПАРОЛЬ"
-```
-
-### Секретный путь
-
-Сгенерируйте два GUID (`uuidgen`, онлайн-генератор и т.п.) и впишите в `Admin__SecretPathSegment1/2`.
-Админка будет доступна по `https://ваш-хост/{seg1}/{seg2}/`.
-
 ## Деплой на VPS (Ubuntu 22.04) одной командой
 
 На отдельном сервере с доменом. Сначала направьте **A-запись домена на IP этого сервера**,
@@ -92,11 +52,51 @@ docker compose down             # остановить
    (к существующему UUID или создав нового через API), ручные ссылки и общие подписки.
 4. Скопируйте ссылку витрины (иконка копирования в строке пользователя) и передайте человеку.
 
+## Конфигурация
+
+Все секреты задаются через переменные окружения (см. [`.env.example`](.env.example)):
+
+| Переменная | Назначение |
+|---|---|
+| `Admin__SecretPathSegment1` / `…Segment2` | Два GUID-сегмента секретного пути админки |
+| `Admin__PasswordHash` / `Admin__PasswordSalt` | PBKDF2-хеш и соль пароля админа (base64) |
+| `ConnectionStrings__DefaultConnection` | Строка подключения SQLite (в Docker по умолчанию `/data/vpndashboard.db`) |
+| `Ping__IntervalMinutes` / `…TimeoutSeconds` / `…Enabled` | Параметры фонового пинга (необязательно) |
+
+### Сгенерировать хеш пароля
+
+```bash
+dotnet run --project VpnDashboard -- hash-password "ВАШ_ПАРОЛЬ"
+# выведет строки Admin__PasswordHash=… и Admin__PasswordSalt=… — скопируйте в .env
+```
+
+В контейнере (ENTRYPOINT уже `dotnet VpnDashboard.dll`):
+
+```bash
+docker compose run --rm --no-deps vpndashboard hash-password "ВАШ_ПАРОЛЬ"
+```
+
+### Секретный путь
+
+Сгенерируйте два GUID (`uuidgen`, онлайн-генератор и т.п.) и впишите в `Admin__SecretPathSegment1/2`.
+Админка будет доступна по `https://ваш-хост/{seg1}/{seg2}/`.
+
 ## Локальная разработка
 
 ```bash
 dotnet run --project VpnDashboard --launch-profile https
 ```
+
+## Архитектура (коротко)
+
+- Локальная БД хранит пользователей, серверы, привязки, ручные и общие подписки. Источник правды
+  по VPN-конфигам остаётся за панелями Hiddify; приватные ключи у нас **не хранятся**.
+- Один локальный пользователь имеет разные UUID на разных серверах (привязка `(ServerId, Uuid)`).
+- Витрина рендерится как статический SSR-компонент без Blazor-circuit — открывается быстро и
+  работает даже при недоступном SignalR. QR генерируется на сервере (QRCoder).
+- Админка спрятана за секретным путём `/{guid1}/{guid2}/…` (первый барьер) и закрыта
+  cookie-аутентификацией с паролем (PBKDF2). Без авторизации — редирект на логин; обращение к
+  админ-путям без секрета — нейтральный 404.
 
 Dev-секреты (секретный путь и пароль `devpass123`) заданы в
 `VpnDashboard/appsettings.Development.json` — только для локального запуска.
