@@ -8,7 +8,6 @@
   человек видит актуальный набор subscription-ссылок с копированием и QR-кодом.
 
 Стек: .NET 10, Blazor Server (InteractiveServer) + MudBlazor, EF Core + SQLite, Serilog, Docker.
-Подробное задание — в [`VPN_DASHBOARD_PLAN.md`](VPN_DASHBOARD_PLAN.md).
 
 ## Архитектура (коротко)
 
