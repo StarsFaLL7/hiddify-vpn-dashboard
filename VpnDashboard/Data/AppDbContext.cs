@@ -11,6 +11,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ManualSubscription> ManualSubscriptions => Set<ManualSubscription>();
     public DbSet<GlobalSubscription> GlobalSubscriptions => Set<GlobalSubscription>();
     public DbSet<UserGlobalSubscription> UserGlobalSubscriptions => Set<UserGlobalSubscription>();
+    public DbSet<SubscriptionSnapshot> SubscriptionSnapshots => Set<SubscriptionSnapshot>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -48,6 +49,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .WithMany(u => u.ManualSubscriptions)
                 .HasForeignKey(x => x.LocalUserId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<SubscriptionSnapshot>(e =>
+        {
+            e.HasIndex(x => new { x.SourceKind, x.SourceId }).IsUnique();
         });
 
         b.Entity<UserGlobalSubscription>(e =>

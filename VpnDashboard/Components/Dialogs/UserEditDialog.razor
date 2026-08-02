@@ -31,6 +31,16 @@
                                Variant="Variant.Outlined" Class="mt-2" OnClick="RegenerateToken">
                         Перевыпустить токен
                     </MudButton>
+
+                    <MudDivider Class="my-4" />
+                    <MudText Typo="Typo.subtitle2">Агрегированная подписка</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        Опрашивает все подписки пользователя и показывает, что вернул каждый провайдер.
+                    </MudText>
+                    <MudButton StartIcon="@Icons.Material.Filled.FactCheck" Color="Color.Info"
+                               Variant="Variant.Outlined" Class="mt-2" OnClick="CheckAggregate">
+                        Проверить агрегат
+                    </MudButton>
                 </MudTabPanel>
 
                 <MudTabPanel Text="@($"Привязки ({_user.Bindings.Count})")">
@@ -77,26 +87,28 @@
                 </MudTabPanel>
 
                 <MudTabPanel Text="@($"Ручные ссылки ({_user.ManualSubscriptions.Count})")">
-                    <MudStack Row Spacing="2" AlignItems="AlignItems.Center" Class="mb-3">
-                        <MudTextField @bind-Value="_newManualLabel" Label="Подпись" Margin="Margin.Dense" />
-                        <MudTextField @bind-Value="_newManualUrl" Label="URL" Margin="Margin.Dense" />
-                        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="AddManual">Добавить</MudButton>
-                    </MudStack>
+                    <MudButton StartIcon="@Icons.Material.Filled.Add" Color="Color.Primary"
+                               Variant="Variant.Filled" Class="mb-3" OnClick="AddManual">
+                        Добавить ссылку
+                    </MudButton>
                     <MudSimpleTable Dense Bordered>
                         <thead>
-                            <tr><th>Подпись</th><th>URL</th><th>Вкл.</th><th></th></tr>
+                            <tr><th>Подпись</th><th>Префикс</th><th>URL</th><th>Вкл.</th><th></th></tr>
                         </thead>
                         <tbody>
                             @foreach (var m in _user.ManualSubscriptions)
                             {
                                 <tr>
                                     <td>@m.Label</td>
+                                    <td>@(m.Prefix ?? "—")</td>
                                     <td><span class="url-cell">@m.Url</span></td>
                                     <td>
                                         <MudSwitch T="bool" Value="m.IsEnabled" Color="Color.Primary"
                                                    ValueChanged="@(v => ToggleManual(m, v))" />
                                     </td>
                                     <td>
+                                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                                       OnClick="@(() => EditManual(m))" />
                                         <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
                                                        Color="Color.Error" OnClick="@(() => RemoveManual(m))" />
                                     </td>
@@ -104,7 +116,7 @@
                             }
                             @if (_user.ManualSubscriptions.Count == 0)
                             {
-                                <tr><td colspan="4"><MudText Typo="Typo.body2">Нет ручных ссылок.</MudText></td></tr>
+                                <tr><td colspan="5"><MudText Typo="Typo.body2">Нет ручных ссылок.</MudText></td></tr>
                             }
                         </tbody>
                     </MudSimpleTable>
@@ -147,8 +159,6 @@
 
     private string _name = string.Empty;
     private string? _comment;
-    private string _newManualLabel = string.Empty;
-    private string _newManualUrl = string.Empty;
 
     protected override async Task OnInitializedAsync() => await Load();
 
@@ -219,23 +229,49 @@
 
     private async Task AddManual()
     {
-        if (string.IsNullOrWhiteSpace(_newManualLabel) || string.IsNullOrWhiteSpace(_newManualUrl))
+        var dialog = await DialogService.ShowAsync<SubscriptionEditDialog>("Новая ссылка");
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: SubscriptionEditDialog.Result data })
         {
-            Snackbar.Add("Заполните подпись и URL", Severity.Warning);
-            return;
+            await SubscriptionService.AddManualAsync(UserId, data.Label, data.Url, data.Prefix, data.UserAgent);
+            await Load();
+            _changed = true;
         }
-        await SubscriptionService.AddManualAsync(UserId, _newManualLabel, _newManualUrl);
-        _newManualLabel = string.Empty;
-        _newManualUrl = string.Empty;
-        await Load();
-        _changed = true;
+    }
+
+    private async Task EditManual(ManualSubscription m)
+    {
+        var parameters = new DialogParameters
+        {
+            ["Label"] = m.Label,
+            ["Url"] = m.Url,
+            ["Prefix"] = m.Prefix,
+            ["UserAgent"] = m.UpstreamUserAgent
+        };
+        var dialog = await DialogService.ShowAsync<SubscriptionEditDialog>("Редактирование ссылки", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: SubscriptionEditDialog.Result data })
+        {
+            await SubscriptionService.UpdateManualAsync(
+                m.Id, data.Label, data.Url, m.IsEnabled, data.Prefix, data.UserAgent);
+            await Load();
+            _changed = true;
+        }
     }
 
     private async Task ToggleManual(ManualSubscription m, bool enabled)
     {
-        await SubscriptionService.UpdateManualAsync(m.Id, m.Label, m.Url, enabled);
+        await SubscriptionService.UpdateManualAsync(
+            m.Id, m.Label, m.Url, enabled, m.Prefix, m.UpstreamUserAgent);
         m.IsEnabled = enabled;
         _changed = true;
+    }
+
+    private async Task CheckAggregate()
+    {
+        var parameters = new DialogParameters { ["ShowcaseToken"] = _user!.ShowcaseToken };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true };
+        await DialogService.ShowAsync<AggregateCheckDialog>($"Агрегат: {_user.Name}", parameters, options);
     }
 
     private async Task RemoveManual(ManualSubscription m)

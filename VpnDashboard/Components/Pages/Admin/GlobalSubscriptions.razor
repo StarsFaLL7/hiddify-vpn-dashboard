@@ -14,6 +14,7 @@
 <MudTable Items="_subs" Loading="_loading" Hover Bordered Dense>
     <HeaderContent>
         <MudTh>Подпись</MudTh>
+        <MudTh>Префикс</MudTh>
         <MudTh>URL</MudTh>
         <MudTh>Назначена</MudTh>
         <MudTh>Включена</MudTh>
@@ -21,6 +22,7 @@
     </HeaderContent>
     <RowTemplate>
         <MudTd DataLabel="Подпись">@context.Label</MudTd>
+        <MudTd DataLabel="Префикс">@(context.Prefix ?? "—")</MudTd>
         <MudTd DataLabel="URL"><span class="url-cell">@context.Url</span></MudTd>
         <MudTd DataLabel="Назначена">@(context.Assignments.Count) польз.</MudTd>
         <MudTd DataLabel="Включена">
@@ -62,11 +64,11 @@
 
     private async Task AddSub()
     {
-        var dialog = await DialogService.ShowAsync<GlobalSubEditDialog>("Новая общая подписка");
+        var dialog = await DialogService.ShowAsync<SubscriptionEditDialog>("Новая общая подписка");
         var result = await dialog.Result;
-        if (result is { Canceled: false, Data: ValueTuple<string, string> data })
+        if (result is { Canceled: false, Data: SubscriptionEditDialog.Result data })
         {
-            await SubscriptionService.CreateGlobalAsync(data.Item1, data.Item2);
+            await SubscriptionService.CreateGlobalAsync(data.Label, data.Url, data.Prefix, data.UserAgent);
             Snackbar.Add("Подписка добавлена", Severity.Success);
             await Reload();
         }
@@ -74,12 +76,19 @@
 
     private async Task EditSub(GlobalSubscription sub)
     {
-        var parameters = new DialogParameters { ["Label"] = sub.Label, ["Url"] = sub.Url };
-        var dialog = await DialogService.ShowAsync<GlobalSubEditDialog>("Редактирование", parameters);
-        var result = await dialog.Result;
-        if (result is { Canceled: false, Data: ValueTuple<string, string> data })
+        var parameters = new DialogParameters
         {
-            await SubscriptionService.UpdateGlobalAsync(sub.Id, data.Item1, data.Item2, sub.IsEnabled);
+            ["Label"] = sub.Label,
+            ["Url"] = sub.Url,
+            ["Prefix"] = sub.Prefix,
+            ["UserAgent"] = sub.UpstreamUserAgent
+        };
+        var dialog = await DialogService.ShowAsync<SubscriptionEditDialog>("Редактирование", parameters);
+        var result = await dialog.Result;
+        if (result is { Canceled: false, Data: SubscriptionEditDialog.Result data })
+        {
+            await SubscriptionService.UpdateGlobalAsync(
+                sub.Id, data.Label, data.Url, sub.IsEnabled, data.Prefix, data.UserAgent);
             Snackbar.Add("Сохранено", Severity.Success);
             await Reload();
         }
@@ -87,7 +96,8 @@
 
     private async Task ToggleEnabled(GlobalSubscription sub, bool enabled)
     {
-        await SubscriptionService.UpdateGlobalAsync(sub.Id, sub.Label, sub.Url, enabled);
+        await SubscriptionService.UpdateGlobalAsync(
+            sub.Id, sub.Label, sub.Url, enabled, sub.Prefix, sub.UpstreamUserAgent);
         sub.IsEnabled = enabled;
     }
 

@@ -15,6 +15,13 @@
                           HelperText="Используется для subscription-ссылок витрины" />
             <MudTextField @bind-Value="Model.AdminUuid" Label="Admin UUID (Hiddify-API-Key)" Required
                           RequiredError="Укажите admin UUID" />
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.subtitle2">Агрегированная подписка</MudText>
+            <MudTextField @bind-Value="Model.Prefix" Label="Префикс"
+                          HelperText="Приписывается к именам серверов в общей подписке. Пусто — берётся имя сервера" />
+            <MudTextField @bind-Value="Model.UpstreamUserAgent" Label="User-Agent"
+                          HelperText="Пусто — значение из конфигурации" />
         </MudForm>
     </DialogContent>
     <DialogActions>
@@ -40,8 +47,14 @@
         Model.AdminProxyPath = Model.AdminProxyPath.Trim('/', ' ');
         Model.ClientProxyPath = Model.ClientProxyPath.Trim('/', ' ');
         Model.AdminUuid = Model.AdminUuid.Trim();
+        Model.Prefix = Blank(Model.Prefix);
+        Model.UpstreamUserAgent = Blank(Model.UpstreamUserAgent);
         MudDialog.Close(DialogResult.Ok(Model));
     }
 
     private void Cancel() => MudDialog.Cancel();
+
+    /// <summary>Пустое поле хранится как null, а не как пустая строка — так проще проверять «задано ли».</summary>
+    private static string? Blank(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

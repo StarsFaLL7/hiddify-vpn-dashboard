@@ -1,0 +1,51 @@
+@* Создание/редактирование подписки — общий диалог для общих и ручных ссылок. *@
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="_form">
+            <MudTextField @bind-Value="Label" Label="Подпись" Required RequiredError="Укажите подпись" />
+            <MudTextField @bind-Value="Url" Label="URL" Required RequiredError="Укажите URL" Class="mt-2" />
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.subtitle2">Агрегированная подписка</MudText>
+            <MudTextField @bind-Value="Prefix" Label="Префикс"
+                          HelperText="Приписывается к именам серверов в общей подписке. Пусто — берётся подпись" />
+            <MudTextField @bind-Value="UserAgent" Label="User-Agent"
+                          HelperText="Провайдеры отдают разный набор серверов разным клиентам. Пусто — значение из конфигурации" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Отмена</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Save">Сохранить</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    /// <summary>Результат редактирования.</summary>
+    public sealed record Result(string Label, string Url, string? Prefix, string? UserAgent);
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public string Label { get; set; } = string.Empty;
+    [Parameter] public string Url { get; set; } = string.Empty;
+    [Parameter] public string? Prefix { get; set; }
+    [Parameter] public string? UserAgent { get; set; }
+
+    private MudForm _form = null!;
+
+    private async Task Save()
+    {
+        await _form.ValidateAsync();
+        if (!_form.IsValid)
+            return;
+
+        MudDialog.Close(DialogResult.Ok(
+            new Result(Label.Trim(), Url.Trim(), Blank(Prefix), Blank(UserAgent))));
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    /// <summary>Пустое поле хранится как null, а не как пустая строка — так проще проверять «задано ли».</summary>
+    private static string? Blank(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+}

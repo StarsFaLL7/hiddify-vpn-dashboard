@@ -33,7 +33,13 @@ namespace VpnDashboard.Data.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Prefix")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpstreamUserAgent")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Url")
@@ -80,7 +86,13 @@ namespace VpnDashboard.Data.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Prefix")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpstreamUserAgent")
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -138,7 +150,13 @@ namespace VpnDashboard.Data.Migrations
                     b.Property<Guid>("LocalUserId")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Prefix")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpstreamUserAgent")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Url")
@@ -150,6 +168,60 @@ namespace VpnDashboard.Data.Migrations
                     b.HasIndex("LocalUserId");
 
                     b.ToTable("ManualSubscriptions");
+                });
+
+            modelBuilder.Entity("VpnDashboard.Data.Entities.SubscriptionSnapshot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ConfigCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<byte[]>("ContentGzip")
+                        .HasColumnType("BLOB");
+
+                    b.Property<long>("DownloadBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("FetchedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastAttemptAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastError")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastFormat")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("LastStatusCode")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("SourceId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SourceKind")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SourceUrl")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("TotalBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("UploadBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SourceKind", "SourceId")
+                        .IsUnique();
+
+                    b.ToTable("SubscriptionSnapshots");
                 });
 
             modelBuilder.Entity("VpnDashboard.Data.Entities.UserGlobalSubscription", b =>

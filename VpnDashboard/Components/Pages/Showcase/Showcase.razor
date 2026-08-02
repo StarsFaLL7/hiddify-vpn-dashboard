@@ -3,8 +3,10 @@
 @using Microsoft.Extensions.Options
 @using QRCoder
 @using VpnDashboard.Options
+@using VpnDashboard.Subscriptions
 @inject ShowcaseService ShowcaseService
 @inject IOptions<ShowcaseOptions> ShowcaseOptions
+@inject IOptions<AggregationOptions> AggregationOptions
 
 @if (_model is null)
 {
@@ -25,11 +27,11 @@ else
             </div>
             <h1 class="bp-name">@_model.UserName</h1>
             <div class="bp-meta">
-                <span class="bp-meta-item"><span class="bp-ok-dot" aria-hidden="true"></span>@CountLabel(_model.Links.Count)</span>
+                <span class="bp-meta-item"><span class="bp-ok-dot" aria-hidden="true"></span>@CountLabel(_model.Sources.Count)</span>
             </div>
         </header>
 
-        @if (_model.Links.Count == 0)
+        @if (_model.Sources.Count == 0)
         {
             <section class="bp-empty">
                 <h2>Пока пусто</h2>
@@ -38,41 +40,70 @@ else
         }
         else
         {
-            <section class="bp-tickets">
-                @{
-                    var i = 0;
-                }
-                @foreach (var link in _model.Links)
-                {
-                    <article class="bp-ticket @KindClass(link.Kind)" style="--i: @i">
-                        <div class="bp-ticket-main">
-                            <div class="bp-fields">
-                                <span class="bp-kind">@KindLabel(link.Kind)</span>
-                                <span class="bp-valid"><span class="bp-ok-dot" aria-hidden="true"></span>Активно</span>
+            @* Одна ссылка на всё: клиент получит по ней серверы всех подписок сразу. *@
+            <article class="bp-ticket is-hero is-server">
+                <div class="bp-ticket-main">
+                    <div class="bp-fields">
+                        <span class="bp-kind">Подписка</span>
+                        <span class="bp-valid"><span class="bp-ok-dot" aria-hidden="true"></span>Активно</span>
+                    </div>
+                    <h2 class="bp-title">Все подключения одной ссылкой</h2>
+                    <span class="bp-fieldlabel">Адрес подписки</span>
+                    <code class="bp-url">@_aggregateUrl</code>
+                    <button class="bp-copy" data-copy="@_aggregateUrl" type="button">
+                        <span class="sc-copy-label">Скопировать ссылку</span>
+                    </button>
+
+                    @if (DeepLinks.Count > 0)
+                    {
+                        <div class="bp-apps">
+                            <span class="bp-fieldlabel">Открыть в приложении</span>
+                            <div class="bp-apps-row">
+                                @foreach (var (name, href) in DeepLinks)
+                                {
+                                    <a class="bp-app" href="@href" rel="nofollow">@name</a>
+                                }
                             </div>
-                            <h2 class="bp-title">@link.Label</h2>
-                            <span class="bp-fieldlabel">Адрес подписки</span>
-                            <code class="bp-url">@link.Url</code>
-                            <button class="bp-copy" data-copy="@link.Url" type="button">
-                                <span class="sc-copy-label">Скопировать ссылку</span>
-                            </button>
                         </div>
+                    }
+                </div>
 
-                        <div class="bp-perf" aria-hidden="true"></div>
+                <div class="bp-perf" aria-hidden="true"></div>
 
-                        <div class="bp-stub">
-                            <img class="bp-qr" src="@QrDataUri(link.Url)" alt="QR-код для @link.Label" width="160" height="160" />
-                            <span class="bp-scan">QR-код</span>
-                        </div>
-                    </article>
-                    i++;
-                }
-            </section>
+                <div class="bp-stub">
+                    <img class="bp-qr" src="@QrDataUri(_aggregateUrl)" alt="QR-код подписки" width="200" height="200" />
+                    <span class="bp-scan">QR-код</span>
+                </div>
+            </article>
 
             <footer class="bp-howto">
                 <span class="bp-howto-icon" aria-hidden="true">↳</span>
                 <p>@ShowcaseOptions.Value.Instructions</p>
             </footer>
+
+            @* Ссылки провайдеров по отдельности — запасной путь, если общая почему-то не подошла. *@
+            <details class="bp-more">
+                <summary>Отдельные подписки (@_model.Sources.Count)</summary>
+                <div class="bp-more-body">
+                    <p class="bp-more-note">
+                        Нужны, только если общая ссылка не заработала в вашем приложении.
+                        Обычно достаточно одной ссылки выше.
+                    </p>
+                    @foreach (var source in _model.Sources)
+                    {
+                        <div class="bp-mini">
+                            <div class="bp-mini-head">
+                                <span class="bp-kind">@KindLabel(source.Kind)</span>
+                                <span class="bp-mini-name">@source.Label</span>
+                            </div>
+                            <code class="bp-url">@source.Url</code>
+                            <button class="bp-copy bp-copy-mini" data-copy="@source.Url" type="button">
+                                <span class="sc-copy-label">Скопировать</span>
+                            </button>
+                        </div>
+                    }
+                </div>
+            </details>
         }
     </main>
 }
@@ -82,7 +113,8 @@ else
 
     [CascadingParameter] private HttpContext HttpContext { get; set; } = null!;
 
-    private ShowcaseModel? _model;
+    private UserSubscriptions? _model;
+    private string _aggregateUrl = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
@@ -91,37 +123,45 @@ else
 
         _model = await ShowcaseService.GetByTokenAsync(Token);
         if (_model is null)
+        {
             HttpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        // Адрес этой же страницы: по нему браузер получает витрину, а VPN-клиент — подписку.
+        var request = HttpContext.Request;
+        _aggregateUrl = $"{request.Scheme}://{request.Host}{request.Path}";
     }
 
-    private static string KindLabel(ShowcaseLinkKind kind) => kind switch
+    /// <summary>Кнопки импорта в клиенты; шаблоны настраиваются в конфигурации.</summary>
+    private List<(string Name, string Href)> DeepLinks =>
+        AggregationOptions.Value.DeepLinks
+            .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+            .Select(kv => (kv.Key, kv.Value
+                .Replace("{urlenc}", Uri.EscapeDataString(_aggregateUrl))
+                .Replace("{url}", _aggregateUrl)))
+            .ToList();
+
+    private static string KindLabel(SubscriptionSourceKind kind) => kind switch
     {
-        ShowcaseLinkKind.Server => "Сервер",
-        ShowcaseLinkKind.Manual => "Ссылка",
-        ShowcaseLinkKind.Shared => "Общая",
+        SubscriptionSourceKind.Server => "Сервер",
+        SubscriptionSourceKind.Manual => "Ссылка",
+        SubscriptionSourceKind.Shared => "Общая",
         _ => ""
     };
 
-    private static string KindClass(ShowcaseLinkKind kind) => kind switch
-    {
-        ShowcaseLinkKind.Server => "is-server",
-        ShowcaseLinkKind.Manual => "is-manual",
-        ShowcaseLinkKind.Shared => "is-shared",
-        _ => ""
-    };
-
-    // «1 подключение / 2 подключения / 5 подключений»
+    // «1 подписка / 2 подписки / 5 подписок»
     private static string CountLabel(int n)
     {
         var word = (n % 100 is >= 11 and <= 14)
-            ? "подключений"
+            ? "подписок"
             : (n % 10) switch
             {
-                1 => "подключение",
-                2 or 3 or 4 => "подключения",
-                _ => "подключений"
+                1 => "подписка",
+                2 or 3 or 4 => "подписки",
+                _ => "подписок"
             };
-        return $"{n} {word}";
+        return $"{n} {word} в одной ссылке";
     }
 
     // Серверная генерация QR (PngByteQRCode — кроссплатформенно, без System.Drawing).

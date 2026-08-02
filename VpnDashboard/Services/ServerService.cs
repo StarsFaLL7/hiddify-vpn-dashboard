@@ -53,6 +53,8 @@ public sealed class ServerService(IDbContextFactory<AppDbContext> dbFactory, IHi
         existing.AdminProxyPath = server.AdminProxyPath;
         existing.ClientProxyPath = server.ClientProxyPath;
         existing.AdminUuid = server.AdminUuid;
+        existing.Prefix = server.Prefix;
+        existing.UpstreamUserAgent = server.UpstreamUserAgent;
         await db.SaveChangesAsync(ct);
     }
 

@@ -17,6 +17,12 @@ public class ManualSubscription
 
     public bool IsEnabled { get; set; } = true;
 
+    /// <summary>Короткий префикс имён серверов в агрегированной подписке. Пусто — берётся <see cref="Label"/>.</summary>
+    public string? Prefix { get; set; }
+
+    /// <summary>User-Agent для запроса подписки. Пусто — дефолт из конфига.</summary>
+    public string? UpstreamUserAgent { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }

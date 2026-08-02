@@ -9,6 +9,7 @@ using VpnDashboard.Hiddify;
 using VpnDashboard.Options;
 using VpnDashboard.Security;
 using VpnDashboard.Services;
+using VpnDashboard.Subscriptions;
 
 // Setup-команда: `dotnet run -- hash-password <пароль>` печатает hash/salt для конфига.
 if (args is ["hash-password", var pwd])
@@ -42,6 +43,7 @@ builder.Services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>
 builder.Services.Configure<AdminOptions>(builder.Configuration.GetSection(AdminOptions.SectionName));
 builder.Services.Configure<PingOptions>(builder.Configuration.GetSection(PingOptions.SectionName));
 builder.Services.Configure<ShowcaseOptions>(builder.Configuration.GetSection(ShowcaseOptions.SectionName));
+builder.Services.Configure<AggregationOptions>(builder.Configuration.GetSection(AggregationOptions.SectionName));
 
 // База данных (SQLite, путь — из конфига для монтирования в Docker volume).
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
@@ -54,6 +56,16 @@ builder.Services.AddScoped<UserService>();
 builder.Services.AddScoped<BindingService>();
 builder.Services.AddScoped<SubscriptionService>();
 builder.Services.AddScoped<ShowcaseService>();
+
+// Агрегатор подписок: одна ссылка пользователя вместо набора провайдерских.
+builder.Services.AddSingleton<SyntheticIdentity>();
+builder.Services.AddSingleton<SourceLockRegistry>();
+builder.Services.AddScoped<AggregationService>();
+builder.Services.AddHttpClient<UpstreamSubscriptionFetcher>(c =>
+{
+    // Реальный таймаут задаётся на каждый запрос из AggregationOptions; здесь — верхняя граница.
+    c.Timeout = TimeSpan.FromSeconds(60);
+});
 
 // Фоновый пинг серверов.
 builder.Services.AddHostedService<ServerPingService>();
@@ -96,10 +108,17 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>().CreateDbContext();
     db.Database.Migrate();
+    // Агрегатор обновляет снимки подписок параллельно по источникам; WAL позволяет
+    // читателям не блокироваться на писателе и снимает «database is locked».
+    db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
 }
 
 // Доверие заголовкам прокси — первым в пайплайне, чтобы https/scheme определялись верно.
 app.UseForwardedHeaders();
+
+// Агрегированная подписка отдаётся по адресу витрины и должна перехватываться до маршрутизации:
+// иначе её путь конфликтует с маршрутом страницы витрины. Браузеры проходят дальше.
+app.UseMiddleware<AggregatedSubscriptionMiddleware>();
 
 // Секретный префикс админки: фреймворк снимает его в PathBase, чтобы NavigationManager и роутинг
 // оставались консистентными. Витрина и статика обслуживаются на реальном корне.

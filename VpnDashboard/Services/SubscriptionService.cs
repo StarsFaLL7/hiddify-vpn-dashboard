@@ -9,7 +9,9 @@ public sealed class SubscriptionService(IDbContextFactory<AppDbContext> dbFactor
 {
     // ---- Ручные подписки ----
 
-    public async Task<ManualSubscription> AddManualAsync(Guid userId, string label, string url, CancellationToken ct = default)
+    public async Task<ManualSubscription> AddManualAsync(
+        Guid userId, string label, string url, string? prefix = null, string? userAgent = null,
+        CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var sub = new ManualSubscription
@@ -18,6 +20,8 @@ public sealed class SubscriptionService(IDbContextFactory<AppDbContext> dbFactor
             LocalUserId = userId,
             Label = label.Trim(),
             Url = url.Trim(),
+            Prefix = prefix,
+            UpstreamUserAgent = userAgent,
             IsEnabled = true
         };
         db.ManualSubscriptions.Add(sub);
@@ -25,7 +29,9 @@ public sealed class SubscriptionService(IDbContextFactory<AppDbContext> dbFactor
         return sub;
     }
 
-    public async Task UpdateManualAsync(Guid id, string label, string url, bool isEnabled, CancellationToken ct = default)
+    public async Task UpdateManualAsync(
+        Guid id, string label, string url, bool isEnabled, string? prefix = null, string? userAgent = null,
+        CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var sub = await db.ManualSubscriptions.FirstOrDefaultAsync(s => s.Id == id, ct);
@@ -35,6 +41,8 @@ public sealed class SubscriptionService(IDbContextFactory<AppDbContext> dbFactor
         sub.Label = label.Trim();
         sub.Url = url.Trim();
         sub.IsEnabled = isEnabled;
+        sub.Prefix = prefix;
+        sub.UpstreamUserAgent = userAgent;
         await db.SaveChangesAsync(ct);
     }
 
@@ -61,7 +69,8 @@ public sealed class SubscriptionService(IDbContextFactory<AppDbContext> dbFactor
             .ToListAsync(ct);
     }
 
-    public async Task<GlobalSubscription> CreateGlobalAsync(string label, string url, CancellationToken ct = default)
+    public async Task<GlobalSubscription> CreateGlobalAsync(
+        string label, string url, string? prefix = null, string? userAgent = null, CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var sub = new GlobalSubscription
@@ -69,6 +78,8 @@ public sealed class SubscriptionService(IDbContextFactory<AppDbContext> dbFactor
             Id = Guid.NewGuid(),
             Label = label.Trim(),
             Url = url.Trim(),
+            Prefix = prefix,
+            UpstreamUserAgent = userAgent,
             IsEnabled = true
         };
         db.GlobalSubscriptions.Add(sub);
@@ -76,7 +87,9 @@ public sealed class SubscriptionService(IDbContextFactory<AppDbContext> dbFactor
         return sub;
     }
 
-    public async Task UpdateGlobalAsync(Guid id, string label, string url, bool isEnabled, CancellationToken ct = default)
+    public async Task UpdateGlobalAsync(
+        Guid id, string label, string url, bool isEnabled, string? prefix = null, string? userAgent = null,
+        CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         var sub = await db.GlobalSubscriptions.FirstOrDefaultAsync(s => s.Id == id, ct);
@@ -86,6 +99,8 @@ public sealed class SubscriptionService(IDbContextFactory<AppDbContext> dbFactor
         sub.Label = label.Trim();
         sub.Url = url.Trim();
         sub.IsEnabled = isEnabled;
+        sub.Prefix = prefix;
+        sub.UpstreamUserAgent = userAgent;
         await db.SaveChangesAsync(ct);
     }
 

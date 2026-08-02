@@ -85,7 +85,9 @@
             Domain = server.Domain,
             AdminProxyPath = server.AdminProxyPath,
             ClientProxyPath = server.ClientProxyPath,
-            AdminUuid = server.AdminUuid
+            AdminUuid = server.AdminUuid,
+            Prefix = server.Prefix,
+            UpstreamUserAgent = server.UpstreamUserAgent
         };
         var parameters = new DialogParameters { ["Model"] = copy };
         var dialog = await DialogService.ShowAsync<ServerEditDialog>("Редактирование сервера", parameters);

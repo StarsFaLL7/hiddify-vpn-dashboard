@@ -1,23 +1,18 @@
 using Microsoft.EntityFrameworkCore;
 using VpnDashboard.Data;
+using VpnDashboard.Data.Entities;
+using VpnDashboard.Subscriptions;
 
 namespace VpnDashboard.Services;
 
-public enum ShowcaseLinkKind
-{
-    Server,
-    Manual,
-    Shared
-}
-
-public sealed record ShowcaseLink(string Label, string Url, ShowcaseLinkKind Kind);
-
-public sealed record ShowcaseModel(string UserName, IReadOnlyList<ShowcaseLink> Links);
-
-/// <summary>Сборка набора subscription-ссылок витрины по персональному токену пользователя.</summary>
+/// <summary>
+/// Разрешение персонального токена витрины в набор подписок пользователя.
+/// Единственное место, где решается, что именно входит в набор, — им пользуются
+/// и страница витрины, и агрегатор.
+/// </summary>
 public sealed class ShowcaseService(IDbContextFactory<AppDbContext> dbFactory)
 {
-    public async Task<ShowcaseModel?> GetByTokenAsync(string token, CancellationToken ct = default)
+    public async Task<UserSubscriptions?> GetByTokenAsync(string token, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(token))
             return null;
@@ -33,29 +28,64 @@ public sealed class ShowcaseService(IDbContextFactory<AppDbContext> dbFactory)
         if (user is null)
             return null;
 
-        var links = new List<ShowcaseLink>();
+        var sources = new List<SubscriptionSource>();
 
         // Привязки к серверам Hiddify: одна универсальная ссылка на каждый активный сервер.
-        foreach (var b in user.Bindings.Where(b => b is { IsEnabled: true, IsBroken: false }))
+        foreach (var b in user.Bindings.Where(b => b is { IsEnabled: true, IsBroken: false })
+                     .OrderBy(b => b.HiddifyServer.Name))
         {
             var domain = b.HiddifyServer.Domain.TrimEnd('/');
             var clientPath = b.HiddifyServer.ClientProxyPath.Trim('/');
             var url = $"https://{domain}/{clientPath}/{b.HiddifyUuid}/";
-            links.Add(new ShowcaseLink(b.HiddifyServer.Name, url, ShowcaseLinkKind.Server));
+
+            sources.Add(new SubscriptionSource(
+                SubscriptionSourceKind.Server,
+                b.Id,
+                b.HiddifyServer.Name,
+                Fallback(b.HiddifyServer.Prefix, b.HiddifyServer.Name),
+                url,
+                // Hiddify выбирает формат по User-Agent; путь xray/ отдаёт JSON-массив
+                // Xray-конфигов гарантированно, без зависимости от автодетекта.
+                url + "xray/",
+                b.HiddifyServer.UpstreamUserAgent));
         }
 
         // Ручные ссылки.
-        foreach (var m in user.ManualSubscriptions.Where(m => m.IsEnabled))
-            links.Add(new ShowcaseLink(m.Label, m.Url, ShowcaseLinkKind.Manual));
+        foreach (var m in user.ManualSubscriptions.Where(m => m.IsEnabled).OrderBy(m => m.Label))
+        {
+            sources.Add(new SubscriptionSource(
+                SubscriptionSourceKind.Manual,
+                m.Id,
+                m.Label,
+                Fallback(m.Prefix, m.Label),
+                m.Url,
+                m.Url,
+                m.UpstreamUserAgent));
+        }
 
         // Общие подписки: глобально включённые И назначенные этому пользователю.
-        var globalLinks = await db.UserGlobalSubscriptions
+        var globals = await db.UserGlobalSubscriptions
             .Where(x => x.LocalUserId == user.Id && x.GlobalSubscription.IsEnabled)
             .OrderBy(x => x.GlobalSubscription.Label)
-            .Select(x => new ShowcaseLink(x.GlobalSubscription.Label, x.GlobalSubscription.Url, ShowcaseLinkKind.Shared))
+            .Select(x => x.GlobalSubscription)
+            .AsNoTracking()
             .ToListAsync(ct);
-        links.AddRange(globalLinks);
 
-        return new ShowcaseModel(user.Name, links);
+        foreach (var g in globals)
+        {
+            sources.Add(new SubscriptionSource(
+                SubscriptionSourceKind.Shared,
+                g.Id,
+                g.Label,
+                Fallback(g.Prefix, g.Label),
+                g.Url,
+                g.Url,
+                g.UpstreamUserAgent));
+        }
+
+        return new UserSubscriptions(user.Id, user.Name, sources);
     }
+
+    private static string Fallback(string? prefix, string label) =>
+        string.IsNullOrWhiteSpace(prefix) ? label : prefix.Trim();
 }

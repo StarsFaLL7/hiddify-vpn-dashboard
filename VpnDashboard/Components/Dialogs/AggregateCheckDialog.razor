@@ -1,0 +1,133 @@
+@* Диагностика агрегированной подписки: что вернул каждый провайдер. *@
+@using VpnDashboard.Data.Entities
+@using VpnDashboard.Subscriptions
+@inject ShowcaseService ShowcaseService
+@inject AggregationService AggregationService
+
+<MudDialog>
+    <DialogContent>
+        @if (_loading)
+        {
+            <MudProgressLinear Indeterminate />
+            <MudText Typo="Typo.body2" Class="mt-2">Опрашиваем провайдеров…</MudText>
+        }
+        else if (_result is null)
+        {
+            <MudAlert Severity="Severity.Error">Пользователь не найден или у него нет подписок.</MudAlert>
+        }
+        else
+        {
+            <MudAlert Severity="@(_result.HasContent ? Severity.Success : Severity.Error)" Class="mb-3" Dense>
+                Итого серверов в подписке: <b>@_result.Configs.Count</b>
+            </MudAlert>
+
+            <MudSimpleTable Dense Bordered>
+                <thead>
+                    <tr>
+                        <th>Источник</th>
+                        <th>Статус</th>
+                        <th>Формат</th>
+                        <th>Серверов</th>
+                        <th>Обновлено</th>
+                        <th>Примечание</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var s in _result.Sources)
+                    {
+                        <tr>
+                            <td>
+                                @s.Label
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">@KindLabel(s.Kind)</MudText>
+                            </td>
+                            <td>
+                                @if (s.Ok)
+                                {
+                                    <MudChip T="string" Color="Color.Success" Size="Size.Small">
+                                        @(s.FromCache ? "из кэша" : "ok")
+                                    </MudChip>
+                                }
+                                else
+                                {
+                                    <MudChip T="string" Color="Color.Error" Size="Size.Small">
+                                        @(s.FetchedAt is null ? "нет данных" : "устарело")
+                                    </MudChip>
+                                }
+                            </td>
+                            <td>@(s.Format ?? "—")</td>
+                            <td>@s.ConfigCount</td>
+                            <td>@(s.FetchedAt is { } at ? Age(at) : "—")</td>
+                            <td>
+                                @if (!string.IsNullOrEmpty(s.Error))
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Error">@s.Error</MudText>
+                                }
+                                else if (s.SampleNames.Count > 0)
+                                {
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                        @string.Join(", ", s.SampleNames)
+                                    </MudText>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+
+            <MudText Typo="Typo.caption" Class="mud-text-secondary mt-3 d-block">
+                Названия в колонке «Примечание» показывают, как серверы будут выглядеть в приложении.
+                Записи, попавшие под правила группировки, переименовываются и здесь не показываются.
+            </MudText>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => MudDialog.Close())">Закрыть</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="_loading" OnClick="Run">
+            Проверить заново
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public string ShowcaseToken { get; set; } = string.Empty;
+
+    private AggregatedSubscription? _result;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync() => await Run();
+
+    private async Task Run()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        var user = await ShowcaseService.GetByTokenAsync(ShowcaseToken);
+        // Диагностика всегда ходит к провайдерам заново, иначе она показывала бы кэш,
+        // а не текущее состояние.
+        _result = user is null ? null : await AggregationService.AggregateAsync(user, forceRefresh: true);
+
+        _loading = false;
+    }
+
+    private static string KindLabel(SubscriptionSourceKind kind) => kind switch
+    {
+        SubscriptionSourceKind.Server => "сервер Hiddify",
+        SubscriptionSourceKind.Manual => "ручная ссылка",
+        SubscriptionSourceKind.Shared => "общая подписка",
+        _ => ""
+    };
+
+    private static string Age(DateTime utc)
+    {
+        var span = DateTime.UtcNow - utc;
+        return span switch
+        {
+            { TotalMinutes: < 1 } => "только что",
+            { TotalHours: < 1 } => $"{(int)span.TotalMinutes} мин назад",
+            { TotalDays: < 1 } => $"{(int)span.TotalHours} ч назад",
+            _ => $"{(int)span.TotalDays} дн назад"
+        };
+    }
+}

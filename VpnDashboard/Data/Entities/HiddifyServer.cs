@@ -23,6 +23,15 @@ public class HiddifyServer
     /// <summary>Hiddify-API-Key (admin UUID) для заголовка авторизации.</summary>
     public string AdminUuid { get; set; } = string.Empty;
 
+    /// <summary>Короткий префикс имён серверов в агрегированной подписке. Пусто — берётся <see cref="Name"/>.</summary>
+    public string? Prefix { get; set; }
+
+    /// <summary>
+    /// User-Agent для запроса подписки. Пусто — дефолт из конфига.
+    /// Каталог серверов у провайдеров зависит от UA, поэтому его иногда нужно подбирать.
+    /// </summary>
+    public string? UpstreamUserAgent { get; set; }
+
     /// <summary>Результат последнего пинга: null — ещё не проверяли.</summary>
     public bool? IsOnline { get; set; }
 
