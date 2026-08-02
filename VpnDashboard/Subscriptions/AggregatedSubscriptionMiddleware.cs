@@ -24,6 +24,7 @@ public sealed class AggregatedSubscriptionMiddleware(RequestDelegate next, IOpti
         HttpContext context,
         ShowcaseService showcase,
         AggregationService aggregation,
+        UserService users,
         ILogger<AggregatedSubscriptionMiddleware> logger)
     {
         if (!_options.Enabled || !TryGetToken(context.Request, out var token) || IsBrowserRequest(context.Request))
@@ -51,6 +52,10 @@ public sealed class AggregatedSubscriptionMiddleware(RequestDelegate next, IOpti
             await context.Response.WriteAsync("Не удалось получить подписки провайдеров", context.RequestAborted);
             return;
         }
+
+        // Отметку ставим только на удачную выдачу — иначе в админке было бы видно
+        // «подписка обновлена», хотя клиент не получил ничего.
+        await users.MarkSubscriptionFetchedAsync(user.UserId, context.RequestAborted);
 
         WriteHeaders(context, user, result);
         context.Response.ContentType = "application/json; charset=utf-8";

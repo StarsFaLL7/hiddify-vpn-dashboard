@@ -56,6 +56,19 @@ public sealed class UserService(IDbContextFactory<AppDbContext> dbFactory)
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Отмечает, что клиент пользователя забрал подписку.
+    /// Пишем точечным UPDATE: это происходит на каждое обновление подписки, и трогать
+    /// UpdatedAt самого пользователя из-за такого события не нужно.
+    /// </summary>
+    public async Task MarkSubscriptionFetchedAsync(Guid id, CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        await db.LocalUsers
+            .Where(u => u.Id == id)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.LastSubscriptionFetchAt, DateTime.UtcNow), ct);
+    }
+
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);

@@ -14,6 +14,12 @@ public class LocalUser
 
     public string? Comment { get; set; }
 
+    /// <summary>
+    /// Когда VPN-клиент этого пользователя последний раз забирал агрегированную подписку.
+    /// Null — ни разу; значит ссылку либо не добавили в клиент, либо только открывали в браузере.
+    /// </summary>
+    public DateTime? LastSubscriptionFetchAt { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }

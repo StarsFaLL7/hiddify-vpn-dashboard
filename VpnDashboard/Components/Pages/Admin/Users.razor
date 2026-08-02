@@ -18,6 +18,7 @@
         <MudTh>Имя</MudTh>
         <MudTh>Активные привязки</MudTh>
         <MudTh>Комментарий</MudTh>
+        <MudTh>Обновлял подписку</MudTh>
         <MudTh>Создан</MudTh>
         <MudTh Style="text-align:right">Действия</MudTh>
     </HeaderContent>
@@ -29,6 +30,18 @@
             </MudChip>
         </MudTd>
         <MudTd DataLabel="Комментарий">@context.Comment</MudTd>
+        <MudTd DataLabel="Обновлял подписку">
+            @if (context.LastSubscriptionFetchAt is { } fetchedAt)
+            {
+                <MudTooltip Text="@fetchedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss")">
+                    <span>@Ago(fetchedAt)</span>
+                </MudTooltip>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">ни разу</MudText>
+            }
+        </MudTd>
         <MudTd DataLabel="Создан">@context.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy")</MudTd>
         <MudTd Style="text-align:right">
             <MudTooltip Text="Копировать ссылку витрины">
@@ -64,6 +77,20 @@
     }
 
     private static int ActiveCount(LocalUser u) => u.Bindings.Count(b => b is { IsEnabled: true, IsBroken: false });
+
+    /// <summary>Давность события словами; точное время — в подсказке.</summary>
+    private static string Ago(DateTime utc)
+    {
+        var span = DateTime.UtcNow - utc;
+        return span switch
+        {
+            { TotalMinutes: < 1 } => "только что",
+            { TotalHours: < 1 } => $"{(int)span.TotalMinutes} мин назад",
+            { TotalDays: < 1 } => $"{(int)span.TotalHours} ч назад",
+            { TotalDays: < 30 } => $"{(int)span.TotalDays} дн назад",
+            _ => utc.ToLocalTime().ToString("dd.MM.yyyy")
+        };
+    }
 
     private string ShowcaseUrl(LocalUser u)
     {
