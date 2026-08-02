@@ -71,6 +71,7 @@
 | `Ping__IntervalMinutes` / `…TimeoutSeconds` / `…Enabled` | Параметры фонового пинга (необязательно) |
 | `Aggregation__HwidSecret` | Ключ синтетического HWID для запросов к провайдерам. Пусто — берётся соль пароля админки |
 | `Aggregation__UserAgent` | User-Agent по умолчанию при запросе подписок (необязательно) |
+| `Aggregation__ProfileTitlePrefix` | Приписка перед названием профиля в клиенте, например `Prism-X \| ` |
 | `Aggregation__CacheTtlMinutes` / `…Enabled` | Параметры агрегатора подписок (необязательно) |
 
 ### Сгенерировать хеш пароля

@@ -15,6 +15,9 @@ namespace VpnDashboard.Subscriptions;
 /// </summary>
 public sealed class AggregatedSubscriptionMiddleware(RequestDelegate next, IOptions<AggregationOptions> options)
 {
+    /// <summary>Клиенты обрезают profile-title до 25 символов.</summary>
+    private const int ProfileTitleMaxLength = 25;
+
     private readonly AggregationOptions _options = options.Value;
 
     public async Task InvokeAsync(
@@ -66,11 +69,30 @@ public sealed class AggregatedSubscriptionMiddleware(RequestDelegate next, IOpti
         // Порядок задаём мы — записи сгруппированы по провайдерам, клиенту пересортировывать не нужно.
         headers["sort-order"] = "none";
 
-        var title = string.IsNullOrWhiteSpace(_options.ProfileTitle) ? user.UserName : _options.ProfileTitle;
-        headers["profile-title"] = "base64:" + Convert.ToBase64String(Encoding.UTF8.GetBytes(Truncate(title, 25)));
+        var title = BuildProfileTitle(user);
+        headers["profile-title"] = "base64:" + Convert.ToBase64String(Encoding.UTF8.GetBytes(title));
 
         if (!string.IsNullOrWhiteSpace(_options.SupportUrl))
             headers["support-url"] = _options.SupportUrl;
+    }
+
+    /// <summary>
+    /// Название профиля в клиенте: приписка сервиса плюс имя пользователя.
+    /// Лимит съедает длинные имена, поэтому режем именно название — приписка с брендом
+    /// должна доезжать целиком, иначе в списке профилей её не узнать.
+    /// </summary>
+    private string BuildProfileTitle(UserSubscriptions user)
+    {
+        var name = string.IsNullOrWhiteSpace(_options.ProfileTitle) ? user.UserName : _options.ProfileTitle;
+        var prefix = _options.ProfileTitlePrefix;
+
+        if (string.IsNullOrEmpty(prefix))
+            return Truncate(name, ProfileTitleMaxLength);
+
+        var room = ProfileTitleMaxLength - prefix.Length;
+        return room > 0
+            ? prefix + Truncate(name, room)
+            : Truncate(prefix, ProfileTitleMaxLength);
     }
 
     /// <summary>Путь витрины — /u/{token}; сегменты за ним игнорируем.</summary>

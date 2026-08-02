@@ -50,6 +50,12 @@ public sealed class AggregationOptions
     /// <summary>Заголовок profile-title в ответе. Пусто — имя пользователя. Клиенты режут до 25 символов.</summary>
     public string ProfileTitle { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Приписка перед названием профиля — название сервиса. Разделитель задаётся здесь же,
+    /// например «Prism-X | ». При нехватке лимита в 25 символов режется название, а не приписка.
+    /// </summary>
+    public string ProfileTitlePrefix { get; set; } = string.Empty;
+
     /// <summary>Заголовок profile-update-interval, часы.</summary>
     public int UpdateIntervalHours { get; set; } = 12;
 
