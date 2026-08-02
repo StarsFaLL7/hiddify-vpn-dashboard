@@ -93,7 +93,7 @@ public sealed class AggregationService(
                 }
                 else
                 {
-                    var renamed = WithName(entry, $"[{source.Prefix}] {name}");
+                    var renamed = WithName(entry, ServerName.WithPrefix(name, source.Prefix));
                     ungrouped.Add(renamed);
                     if (names.Count < 3)
                         names.Add(ReadName(renamed));
