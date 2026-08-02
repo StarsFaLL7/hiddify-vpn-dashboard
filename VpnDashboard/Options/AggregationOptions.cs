@@ -60,6 +60,14 @@ public sealed class AggregationOptions
     public int UpdateIntervalHours { get; set; } = 12;
 
     /// <summary>
+    /// Как клиент сортирует список серверов: <c>none</c> — как отдали мы, <c>ping</c> — по задержке,
+    /// <c>name</c> — по имени. При <c>ping</c> клиент простукивает все серверы и раскладывает их
+    /// по-своему, так что порядок групп из <see cref="GroupInsertAfter"/> перестаёт действовать.
+    /// Неизвестное значение — заголовок не отправляется.
+    /// </summary>
+    public string SortOrder { get; set; } = "none";
+
+    /// <summary>
     /// На сколько дней вперёд объявлять срок подписки в subscription-userinfo.
     /// Сроки у провайдеров разные и продлеваются вручную, поэтому клиенту показываем «бессрочно».
     /// </summary>

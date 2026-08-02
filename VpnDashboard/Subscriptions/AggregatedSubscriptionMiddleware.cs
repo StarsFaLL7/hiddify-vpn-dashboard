@@ -18,6 +18,10 @@ public sealed class AggregatedSubscriptionMiddleware(RequestDelegate next, IOpti
     /// <summary>Клиенты обрезают profile-title до 25 символов.</summary>
     private const int ProfileTitleMaxLength = 25;
 
+    /// <summary>Значения sort-order, которые понимают клиенты; прочее отправлять бессмысленно.</summary>
+    private static readonly HashSet<string> SortOrders =
+        new(["none", "ping", "name"], StringComparer.OrdinalIgnoreCase);
+
     private readonly AggregationOptions _options = options.Value;
 
     public async Task InvokeAsync(
@@ -71,8 +75,8 @@ public sealed class AggregatedSubscriptionMiddleware(RequestDelegate next, IOpti
         headers["subscription-userinfo"] = result.UserInfo.ToHeaderValue();
         headers["profile-update-interval"] = _options.UpdateIntervalHours.ToString();
         headers["profile-web-page-url"] = BuildShowcaseUrl(context.Request);
-        // Порядок задаём мы — записи сгруппированы по провайдерам, клиенту пересортировывать не нужно.
-        headers["sort-order"] = "none";
+        if (SortOrders.Contains(_options.SortOrder))
+            headers["sort-order"] = _options.SortOrder;
 
         var title = BuildProfileTitle(user);
         headers["profile-title"] = "base64:" + Convert.ToBase64String(Encoding.UTF8.GetBytes(title));
