@@ -12,8 +12,15 @@ namespace VpnDashboard.Subscriptions;
 /// и отдельный endpoint конфликтовал бы с её маршрутом. Браузерные запросы пропускаются дальше,
 /// на страницу; запросы VPN-клиентов обрабатываются здесь.
 /// </para>
+/// <para>
+/// Сегмент после токена выбирает вариант агрегата: /u/{token} — всё, /u/{token}/direct —
+/// серверы вне групп, /u/{token}/{slug группы} — только её серверы.
+/// </para>
 /// </summary>
-public sealed class AggregatedSubscriptionMiddleware(RequestDelegate next, IOptions<AggregationOptions> options)
+public sealed class AggregatedSubscriptionMiddleware(
+    RequestDelegate next,
+    IOptions<AggregationOptions> options,
+    SubscriptionVariants variants)
 {
     /// <summary>Клиенты обрезают profile-title до 25 символов.</summary>
     private const int ProfileTitleMaxLength = 25;
@@ -31,8 +38,16 @@ public sealed class AggregatedSubscriptionMiddleware(RequestDelegate next, IOpti
         UserService users,
         ILogger<AggregatedSubscriptionMiddleware> logger)
     {
-        if (!_options.Enabled || !TryGetToken(context.Request, out var token) || IsBrowserRequest(context.Request))
+        if (!_options.Enabled || !TryGetRoute(context.Request, out var token, out var slug) ||
+            IsBrowserRequest(context.Request))
         {
+            await next(context);
+            return;
+        }
+
+        if (!variants.TryResolve(slug, out var variant))
+        {
+            // Незнакомый сегмент — не наша ссылка; пусть с ней разбирается маршрутизация.
             await next(context);
             return;
         }
@@ -45,13 +60,15 @@ public sealed class AggregatedSubscriptionMiddleware(RequestDelegate next, IOpti
             return;
         }
 
-        var result = await aggregation.AggregateAsync(user, ct: context.RequestAborted);
+        var result = await aggregation.AggregateAsync(user, variant, ct: context.RequestAborted);
 
         if (!result.HasContent)
         {
             // Пустой ответ некоторые клиенты применяют и стирают уже настроенные серверы,
             // поэтому честнее вернуть ошибку — клиент оставит текущий профиль.
-            logger.LogError("Агрегация для {User}: ни одного конфига, отдаём 502", user.UserName);
+            logger.LogError(
+                "Агрегация для {User} ({Variant}): ни одного конфига, отдаём 502",
+                user.UserName, variant.Slug.Length == 0 ? "общая" : variant.Slug);
             context.Response.StatusCode = StatusCodes.Status502BadGateway;
             await context.Response.WriteAsync("Не удалось получить подписки провайдеров", context.RequestAborted);
             return;
@@ -61,12 +78,16 @@ public sealed class AggregatedSubscriptionMiddleware(RequestDelegate next, IOpti
         // «подписка обновлена», хотя клиент не получил ничего.
         await users.MarkSubscriptionFetchedAsync(user.UserId, context.RequestAborted);
 
-        WriteHeaders(context, user, result);
+        WriteHeaders(context, user, variant, result);
         context.Response.ContentType = "application/json; charset=utf-8";
         await context.Response.WriteAsync(result.Configs.ToJsonString(), context.RequestAborted);
     }
 
-    private void WriteHeaders(HttpContext context, UserSubscriptions user, AggregatedSubscription result)
+    private void WriteHeaders(
+        HttpContext context,
+        UserSubscriptions user,
+        SubscriptionVariant variant,
+        AggregatedSubscription result)
     {
         var headers = context.Response.Headers;
 
@@ -78,7 +99,7 @@ public sealed class AggregatedSubscriptionMiddleware(RequestDelegate next, IOpti
         if (SortOrders.Contains(_options.SortOrder))
             headers["sort-order"] = _options.SortOrder;
 
-        var title = BuildProfileTitle(user);
+        var title = BuildProfileTitle(user, variant);
         headers["profile-title"] = "base64:" + Convert.ToBase64String(Encoding.UTF8.GetBytes(title));
 
         if (!string.IsNullOrWhiteSpace(_options.SupportUrl))
@@ -86,28 +107,32 @@ public sealed class AggregatedSubscriptionMiddleware(RequestDelegate next, IOpti
     }
 
     /// <summary>
-    /// Название профиля в клиенте: приписка сервиса плюс имя пользователя.
-    /// Лимит съедает длинные имена, поэтому режем именно название — приписка с брендом
-    /// должна доезжать целиком, иначе в списке профилей её не узнать.
+    /// Название профиля в клиенте: приписка сервиса, имя пользователя и пометка варианта.
+    /// Лимит съедает длинные имена, поэтому режем именно название — приписка с брендом и пометка
+    /// должны доезжать целиком, иначе профили в списке клиента не различить.
     /// </summary>
-    private string BuildProfileTitle(UserSubscriptions user)
+    private string BuildProfileTitle(UserSubscriptions user, SubscriptionVariant variant)
     {
         var name = string.IsNullOrWhiteSpace(_options.ProfileTitle) ? user.UserName : _options.ProfileTitle;
         var prefix = _options.ProfileTitlePrefix;
+        var suffix = string.IsNullOrWhiteSpace(variant.ShortName)
+            ? string.Empty
+            : _options.VariantTitleSeparator + variant.ShortName;
 
-        if (string.IsNullOrEmpty(prefix))
-            return Truncate(name, ProfileTitleMaxLength);
-
-        var room = ProfileTitleMaxLength - prefix.Length;
+        var room = ProfileTitleMaxLength - prefix.Length - suffix.Length;
         return room > 0
-            ? prefix + Truncate(name, room)
-            : Truncate(prefix, ProfileTitleMaxLength);
+            ? prefix + Truncate(name, room) + suffix
+            : Truncate(prefix + suffix, ProfileTitleMaxLength);
     }
 
-    /// <summary>Путь витрины — /u/{token}; сегменты за ним игнорируем.</summary>
-    private static bool TryGetToken(HttpRequest request, out string token)
+    /// <summary>
+    /// Путь витрины — /u/{token}[/{вариант}]; сегменты за вариантом игнорируем.
+    /// </summary>
+    private static bool TryGetRoute(HttpRequest request, out string token, out string slug)
     {
         token = string.Empty;
+        slug = string.Empty;
+
         var path = request.Path.Value;
         if (path is null || !path.StartsWith("/u/", StringComparison.OrdinalIgnoreCase))
             return false;
@@ -116,8 +141,11 @@ public sealed class AggregatedSubscriptionMiddleware(RequestDelegate next, IOpti
         if (rest.Length == 0)
             return false;
 
-        var slash = rest.IndexOf('/');
-        token = Uri.UnescapeDataString(slash < 0 ? rest : rest[..slash]);
+        var segments = rest.Split('/');
+        token = Uri.UnescapeDataString(segments[0]);
+        if (segments.Length > 1)
+            slug = Uri.UnescapeDataString(segments[1]);
+
         return token.Length > 0;
     }
 

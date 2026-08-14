@@ -60,6 +60,8 @@ builder.Services.AddScoped<ShowcaseService>();
 // Агрегатор подписок: одна ссылка пользователя вместо набора провайдерских.
 builder.Services.AddSingleton<SyntheticIdentity>();
 builder.Services.AddSingleton<SourceLockRegistry>();
+// Варианты подписки: общая ссылка плюс отдельные — на прямые серверы и на каждую группу со слагом.
+builder.Services.AddSingleton<SubscriptionVariants>();
 builder.Services.AddScoped<AggregationService>();
 builder.Services.AddHttpClient<UpstreamSubscriptionFetcher>(c =>
 {

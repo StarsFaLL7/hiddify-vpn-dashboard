@@ -17,9 +17,15 @@
         }
         else
         {
-            <MudAlert Severity="@(_result.HasContent ? Severity.Success : Severity.Error)" Class="mb-3" Dense>
+            <MudAlert Severity="@(_result.HasContent ? Severity.Success : Severity.Error)" Class="mb-1" Dense>
                 Итого серверов в подписке: <b>@_result.Configs.Count</b>
             </MudAlert>
+
+            @* Сколько записей достанется каждой из отдельных ссылок пользователя. *@
+            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-3">
+                По отдельным ссылкам:
+                @string.Join(" · ", _result.Breakdown.Select(b => $"{b.Name} — {b.Count}"))
+            </MudText>
 
             <MudSimpleTable Dense Bordered>
                 <thead>

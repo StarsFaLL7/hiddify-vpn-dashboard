@@ -314,6 +314,14 @@ body {
     color: var(--bp-faint);
 }
 
+/* ---- Дополнительные ссылки по типам серверов ---- */
+.bp-extra-note {
+    margin: 1.75rem 0 0.85rem;
+    color: var(--bp-muted);
+    font-size: 0.88rem;
+    line-height: 1.55;
+}
+
 /* ---- Инструкция ---- */
 .bp-howto {
     display: flex;

@@ -23,11 +23,15 @@ public sealed record SourceStatus(
     string? Error,
     IReadOnlyList<string> SampleNames);
 
+/// <summary>Сколько записей досталось бы отдельной ссылке — для диагностики в админке.</summary>
+public sealed record VariantCount(string Name, int Count);
+
 /// <summary>Готовая агрегированная подписка.</summary>
 public sealed record AggregatedSubscription(
     JsonArray Configs,
     SubscriptionUserInfo UserInfo,
-    IReadOnlyList<SourceStatus> Sources)
+    IReadOnlyList<SourceStatus> Sources,
+    IReadOnlyList<VariantCount> Breakdown)
 {
     /// <summary>Есть ли что отдавать клиенту.</summary>
     public bool HasContent => Configs.Count > 0;
@@ -50,8 +54,10 @@ public sealed class AggregationService(
 {
     private readonly AggregationOptions _options = options.Value;
 
+    /// <param name="variant">Какая из ссылок пользователя запрошена; null — общая.</param>
     public async Task<AggregatedSubscription> AggregateAsync(
         UserSubscriptions user,
+        SubscriptionVariant? variant = null,
         bool forceRefresh = false,
         CancellationToken ct = default)
     {
@@ -117,27 +123,65 @@ public sealed class AggregationService(
 
         var configs = new JsonArray();
 
-        // Сгруппированные записи идут одним блоком со сквозной нумерацией, но не в самом верху:
-        // сначала обычные серверы провайдеров, чтобы группа не заслоняла начало списка.
+        switch (variant?.Scope ?? SubscriptionScope.All)
+        {
+            case SubscriptionScope.Ungrouped:
+                foreach (var entry in ungrouped)
+                    configs.Add(entry);
+                break;
+
+            case SubscriptionScope.Group:
+                // Индекс приходит из того же списка правил, но конфигурация могла и опустеть.
+                if (variant!.GroupIndex >= 0 && variant.GroupIndex < groups.Count)
+                    AddGroup(configs, groups[variant.GroupIndex]);
+                break;
+
+            default:
+                AddEverything(configs, ungrouped, groups);
+                break;
+        }
+
+        // Наполнение отдельных ссылок: считается всегда, чтобы админка показывала расклад
+        // независимо от того, какой вариант запросили.
+        var breakdown = new List<VariantCount>(groups.Count + 1)
+        {
+            new(Fallback(_options.DirectShortName, "Прямые"), ungrouped.Count)
+        };
+        breakdown.AddRange(groups.Select(g =>
+            new VariantCount(Fallback(g.Rule.ShortName, g.Rule.Name), g.Items.Count)));
+
+        var expire = DateTimeOffset.UtcNow.AddDays(_options.ExpireDays).ToUnixTimeSeconds();
+        var info = new SubscriptionUserInfo(upload, download, unlimited ? 0 : total, expire);
+
+        return new AggregatedSubscription(configs, info, statuses, breakdown);
+    }
+
+    /// <summary>Полный агрегат: серверы провайдеров и блок сгруппированных записей.</summary>
+    private void AddEverything(
+        JsonArray configs,
+        List<JsonNode> ungrouped,
+        List<(ConfigGroupRule Rule, List<JsonNode> Items)> groups)
+    {
+        // Сгруппированные записи идут одним блоком, но не в самом верху: сначала обычные
+        // серверы провайдеров, чтобы группа не заслоняла начало списка.
         var head = Math.Clamp(_options.GroupInsertAfter, 0, ungrouped.Count);
 
         for (var i = 0; i < head; i++)
             configs.Add(ungrouped[i]);
 
-        foreach (var (rule, items) in groups)
-        {
-            var index = 1;
-            foreach (var entry in items)
-                configs.Add(WithName(entry, $"{rule.Name} #{index++}"));
-        }
+        foreach (var group in groups)
+            AddGroup(configs, group);
 
         for (var i = head; i < ungrouped.Count; i++)
             configs.Add(ungrouped[i]);
+    }
 
-        var expire = DateTimeOffset.UtcNow.AddDays(_options.ExpireDays).ToUnixTimeSeconds();
-        var info = new SubscriptionUserInfo(upload, download, unlimited ? 0 : total, expire);
-
-        return new AggregatedSubscription(configs, info, statuses);
+    /// <summary>Записи одной группы под общим именем со сквозной нумерацией.</summary>
+    private static void AddGroup(JsonArray configs, (ConfigGroupRule Rule, List<JsonNode> Items) group)
+    {
+        var index = 1;
+        foreach (var entry in group.Items)
+            configs.Add(WithName(entry, $"{group.Rule.Name} #{index++}"));
     }
 
     /// <summary>Берёт свежий снимок источника из БД либо идёт за ним к провайдеру.</summary>
@@ -230,6 +274,9 @@ public sealed class AggregationService(
     private static SourceStatus Failed(SubscriptionSource s, SubscriptionSnapshot snap, string error) =>
         new(s.Label, s.Kind, s.FetchUrl, false, snap.LastStatusCode, snap.LastFormat,
             snap.ContentGzip is null ? 0 : snap.ConfigCount, snap.FetchedAt, snap.ContentGzip is not null, error, []);
+
+    private static string Fallback(string? value, string fallback) =>
+        string.IsNullOrWhiteSpace(value) ? fallback : value;
 
     private bool IsExcluded(string name) =>
         _options.ExcludeNameContains.Any(p =>

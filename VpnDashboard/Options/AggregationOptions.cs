@@ -56,6 +56,12 @@ public sealed class AggregationOptions
     /// </summary>
     public string ProfileTitlePrefix { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Разделитель перед пометкой варианта в profile-title, например «Prism-X | Иван · Прямые».
+    /// Пометка задаётся вариантом и в лимит 25 символов доезжает целиком.
+    /// </summary>
+    public string VariantTitleSeparator { get; set; } = " · ";
+
     /// <summary>Заголовок profile-update-interval, часы.</summary>
     public int UpdateIntervalHours { get; set; } = 12;
 
@@ -89,21 +95,30 @@ public sealed class AggregationOptions
     /// Совпавшие записи получают общее имя с порядковым номером вместо провайдерского,
     /// и показываются в клиенте подряд, а не вперемешку по провайдерам.
     /// Порядок групп в списке — порядок объявления правил.
+    /// <para>
+    /// Значения по умолчанию здесь не задаются: список из конфигурации биндер не заменяет,
+    /// а дописывает к дефолтному, и правила задвоились бы. Штатный набор — в appsettings.json.
+    /// </para>
     /// </summary>
-    public List<ConfigGroupRule> GroupRules { get; set; } =
-    [
-        new()
-        {
-            Name = "🛰️ Обход белых списков",
-            MatchContains = ["LTE", "Обход", "белые", "белых", "списк"]
-        }
-    ];
+    public List<ConfigGroupRule> GroupRules { get; set; } = [];
 
     /// <summary>
     /// После скольких обычных серверов вставлять блок сгруппированных записей.
     /// 0 — в самое начало списка. Если обычных серверов меньше, группы идут после всех.
     /// </summary>
     public int GroupInsertAfter { get; set; } = 20;
+
+    /// <summary>
+    /// Сегмент пути дополнительной ссылки только на серверы вне групп: <c>/u/{token}/{DirectSlug}</c>.
+    /// Пусто — такая ссылка не формируется.
+    /// </summary>
+    public string DirectSlug { get; set; } = "direct";
+
+    /// <summary>Заголовок карточки прямых серверов на витрине.</summary>
+    public string DirectTitle { get; set; } = "Только прямые серверы";
+
+    /// <summary>Пометка прямых серверов в profile-title. Пусто — профиль без пометки.</summary>
+    public string DirectShortName { get; set; } = "Прямые";
 
     /// <summary>
     /// Шаблоны deep-link-кнопок витрины: подпись — шаблон URL.
@@ -128,6 +143,18 @@ public sealed class ConfigGroupRule
 
     /// <summary>Подстроки имени, по которым запись относится к группе. Регистр не важен.</summary>
     public List<string> MatchContains { get; set; } = [];
+
+    /// <summary>
+    /// Сегмент пути отдельной ссылки только на серверы этой группы: <c>/u/{token}/{Slug}</c>.
+    /// Пусто — отдельной ссылки и карточки на витрине у группы нет.
+    /// </summary>
+    public string Slug { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Короткая пометка группы в profile-title. Пусто — берётся <see cref="Name"/>,
+    /// который вместе с эмодзи обычно не влезает в лимит клиента в 25 символов.
+    /// </summary>
+    public string ShortName { get; set; } = string.Empty;
 
     public bool Matches(string name) =>
         MatchContains.Any(m => !string.IsNullOrWhiteSpace(m) &&

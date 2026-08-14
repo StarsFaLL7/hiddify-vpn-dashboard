@@ -1,4 +1,7 @@
 @page "/u/{Token}"
+@* Вариантные ссылки вида /u/{token}/direct открываются VPN-клиентом, но человек может
+   вставить такую в браузер — маршрут есть, чтобы он попал на витрину, а не на 404. *@
+@page "/u/{Token}/{Variant}"
 @layout VpnDashboard.Components.Layout.ShowcaseLayout
 @using Microsoft.Extensions.Options
 @using QRCoder
@@ -7,6 +10,7 @@
 @inject ShowcaseService ShowcaseService
 @inject IOptions<ShowcaseOptions> ShowcaseOptions
 @inject IOptions<AggregationOptions> AggregationOptions
+@inject SubscriptionVariants Variants
 
 @if (_model is null)
 {
@@ -54,18 +58,7 @@ else
                         <span class="sc-copy-label">Скопировать ссылку</span>
                     </button>
 
-                    @if (DeepLinks.Count > 0)
-                    {
-                        <div class="bp-apps">
-                            <span class="bp-fieldlabel">Открыть в приложении</span>
-                            <div class="bp-apps-row">
-                                @foreach (var (name, href) in DeepLinks)
-                                {
-                                    <a class="bp-app" href="@href" rel="nofollow">@name</a>
-                                }
-                            </div>
-                        </div>
-                    }
+                    @DeepLinkRow(_aggregateUrl)
                 </div>
 
                 <div class="bp-perf" aria-hidden="true"></div>
@@ -75,6 +68,47 @@ else
                     <span class="bp-scan">QR-код</span>
                 </div>
             </article>
+
+            @* Те же серверы, разложенные по типам: пригодится, если хочется держать их
+               отдельными профилями и переключаться между ними в клиенте. *@
+            @if (_extras.Count > 0)
+            {
+                <p class="bp-extra-note">
+                    Если удобнее держать типы серверов отдельными профилями — вот ссылки на каждый.
+                    Они не заменяют общую, а дополняют её.
+                </p>
+
+                <div class="bp-tickets">
+                    @for (var i = 0; i < _extras.Count; i++)
+                    {
+                        var (variant, url) = _extras[i];
+                        <article class="bp-ticket @(i % 2 == 0 ? "is-manual" : "is-shared")" style="--i: @(i + 1)">
+                            <div class="bp-ticket-main">
+                                <div class="bp-fields">
+                                    <span class="bp-kind">@variant.ShortName</span>
+                                    <span class="bp-valid"><span class="bp-ok-dot" aria-hidden="true"></span>Активно</span>
+                                </div>
+                                <h2 class="bp-title">@variant.Title</h2>
+                                <span class="bp-fieldlabel">Адрес подписки</span>
+                                <code class="bp-url">@url</code>
+                                <button class="bp-copy" data-copy="@url" type="button">
+                                    <span class="sc-copy-label">Скопировать ссылку</span>
+                                </button>
+
+                                @DeepLinkRow(url)
+                            </div>
+
+                            <div class="bp-perf" aria-hidden="true"></div>
+
+                            <div class="bp-stub">
+                                <img class="bp-qr" src="@QrDataUri(url)" alt="QR-код подписки: @variant.Title"
+                                     width="160" height="160" />
+                                <span class="bp-scan">QR-код</span>
+                            </div>
+                        </article>
+                    }
+                </div>
+            }
 
             <footer class="bp-howto">
                 <span class="bp-howto-icon" aria-hidden="true">↳</span>
@@ -111,15 +145,27 @@ else
 @code {
     [Parameter] public string Token { get; set; } = string.Empty;
 
+    /// <summary>Сегмент варианта в адресе. Страница у всех вариантов одна и та же.</summary>
+    [Parameter] public string? Variant { get; set; }
+
     [CascadingParameter] private HttpContext HttpContext { get; set; } = null!;
 
     private UserSubscriptions? _model;
     private string _aggregateUrl = string.Empty;
+    private List<(SubscriptionVariant Variant, string Url)> _extras = [];
 
     protected override async Task OnInitializedAsync()
     {
         // Поисковикам не индексировать витрину.
         HttpContext.Response.Headers["X-Robots-Tag"] = "noindex, nofollow";
+
+        // Незнакомый сегмент варианта — такой ссылки не существует; показываем тот же 404,
+        // что и на неизвестный токен, иначе опечатка молча отдавала бы обычную витрину.
+        if (!Variants.TryResolve(Variant, out _))
+        {
+            HttpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
 
         _model = await ShowcaseService.GetByTokenAsync(Token);
         if (_model is null)
@@ -128,18 +174,37 @@ else
             return;
         }
 
-        // Адрес этой же страницы: по нему браузер получает витрину, а VPN-клиент — подписку.
+        // Адрес витрины: по нему браузер получает страницу, а VPN-клиент — подписку.
+        // Собираем из токена, а не из пути запроса, — у вариантных адресов путь длиннее.
         var request = HttpContext.Request;
-        _aggregateUrl = $"{request.Scheme}://{request.Host}{request.Path}";
+        _aggregateUrl = $"{request.Scheme}://{request.Host}/u/{Uri.EscapeDataString(Token)}";
+        _extras = Variants.Extra
+            .Select(v => (Variant: v, Url: $"{_aggregateUrl}/{v.Slug}"))
+            .ToList();
     }
 
     /// <summary>Кнопки импорта в клиенты; шаблоны настраиваются в конфигурации.</summary>
-    private List<(string Name, string Href)> DeepLinks =>
+    private RenderFragment DeepLinkRow(string url) => @<text>
+        @if (DeepLinksFor(url) is { Count: > 0 } links)
+        {
+            <div class="bp-apps">
+                <span class="bp-fieldlabel">Открыть в приложении</span>
+                <div class="bp-apps-row">
+                    @foreach (var (name, href) in links)
+                    {
+                        <a class="bp-app" href="@href" rel="nofollow">@name</a>
+                    }
+                </div>
+            </div>
+        }
+    </text>;
+
+    private List<(string Name, string Href)> DeepLinksFor(string url) =>
         AggregationOptions.Value.DeepLinks
             .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
             .Select(kv => (kv.Key, kv.Value
-                .Replace("{urlenc}", Uri.EscapeDataString(_aggregateUrl))
-                .Replace("{url}", _aggregateUrl)))
+                .Replace("{urlenc}", Uri.EscapeDataString(url))
+                .Replace("{url}", url)))
             .ToList();
 
     private static string KindLabel(SubscriptionSourceKind kind) => kind switch
