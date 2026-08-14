@@ -25,6 +25,10 @@
             <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-3">
                 По отдельным ссылкам:
                 @string.Join(" · ", _result.Breakdown.Select(b => $"{b.Name} — {b.Count}"))
+                @if (_result.DroppedByHealth > 0)
+                {
+                    <text>. Исключено как нерабочие: @_result.DroppedByHealth</text>
+                }
             </MudText>
 
             <MudSimpleTable Dense Bordered>

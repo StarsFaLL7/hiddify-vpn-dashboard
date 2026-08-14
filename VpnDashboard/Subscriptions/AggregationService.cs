@@ -1,11 +1,11 @@
-using System.IO.Compression;
-using System.Text;
 using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using VpnDashboard.Data;
 using VpnDashboard.Data.Entities;
 using VpnDashboard.Options;
+using VpnDashboard.Probing;
+using VpnDashboard.Services;
 
 namespace VpnDashboard.Subscriptions;
 
@@ -27,11 +27,13 @@ public sealed record SourceStatus(
 public sealed record VariantCount(string Name, int Count);
 
 /// <summary>Готовая агрегированная подписка.</summary>
+/// <param name="DroppedByHealth">Сколько записей не попало в подписку как нерабочие.</param>
 public sealed record AggregatedSubscription(
     JsonArray Configs,
     SubscriptionUserInfo UserInfo,
     IReadOnlyList<SourceStatus> Sources,
-    IReadOnlyList<VariantCount> Breakdown)
+    IReadOnlyList<VariantCount> Breakdown,
+    int DroppedByHealth)
 {
     /// <summary>Есть ли что отдавать клиенту.</summary>
     public bool HasContent => Configs.Count > 0;
@@ -49,10 +51,17 @@ public sealed class AggregationService(
     IDbContextFactory<AppDbContext> dbFactory,
     UpstreamSubscriptionFetcher fetcher,
     SourceLockRegistry locks,
+    ServerHealthService health,
     IOptions<AggregationOptions> options,
+    IOptions<ProbeOptions> probeOptions,
     ILogger<AggregationService> logger)
 {
     private readonly AggregationOptions _options = options.Value;
+    private readonly ProbeOptions _probeOptions = probeOptions.Value;
+
+    /// <summary>Отобранная запись вместе с тем, куда она попадёт и жив ли её сервер.</summary>
+    /// <param name="GroupIndex">Индекс правила группировки; -1 — обычный сервер провайдера.</param>
+    private sealed record EntryCandidate(JsonNode Entry, int GroupIndex, bool Dead);
 
     /// <param name="variant">Какая из ссылок пользователя запрошена; null — общая.</param>
     public async Task<AggregatedSubscription> AggregateAsync(
@@ -64,15 +73,11 @@ public sealed class AggregationService(
         var results = await Task.WhenAll(
             user.Sources.Select(s => GetSourceAsync(s, forceRefresh, ct)));
 
+        var deadKeys = await health.GetDeadKeysAsync(ct);
+
         var statuses = new List<SourceStatus>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
-
-        // Сгруппированные записи собираются отдельно, чтобы в клиенте идти подряд,
-        // а не вперемешку с серверами провайдера, у которого нашлись.
-        var groups = _options.GroupRules
-            .Select(r => (Rule: r, Items: new List<JsonNode>()))
-            .ToList();
-        var ungrouped = new List<JsonNode>();
+        var candidates = new List<EntryCandidate>();
 
         long upload = 0, download = 0, total = 0;
         var unlimited = false;
@@ -81,9 +86,9 @@ public sealed class AggregationService(
         {
             var names = new List<string>();
 
-            foreach (var entry in Decompress(snapshot?.ContentGzip))
+            foreach (var entry in SnapshotContent.Decompress(snapshot?.ContentGzip))
             {
-                var name = ReadName(entry);
+                var name = SubscriptionEntry.Name(entry);
                 if (IsExcluded(name))
                     continue;
 
@@ -92,17 +97,19 @@ public sealed class AggregationService(
                 if (!seen.Add(Signature(entry)))
                     continue;
 
-                var group = groups.FirstOrDefault(g => g.Rule.Matches(name));
-                if (group.Items is not null)
+                var dead = IsDead(entry, deadKeys);
+                var groupIndex = _options.GroupRules.FindIndex(r => r.Matches(name));
+
+                if (groupIndex >= 0)
                 {
-                    group.Items.Add(entry);
+                    candidates.Add(new EntryCandidate(entry, groupIndex, dead));
                 }
                 else
                 {
                     var renamed = WithName(entry, ServerName.WithPrefix(name, source.Prefix));
-                    ungrouped.Add(renamed);
-                    if (names.Count < 3)
-                        names.Add(ReadName(renamed));
+                    candidates.Add(new EntryCandidate(renamed, -1, dead));
+                    if (!dead && names.Count < 3)
+                        names.Add(SubscriptionEntry.Name(renamed));
                 }
             }
 
@@ -119,6 +126,23 @@ public sealed class AggregationService(
             }
 
             statuses.Add(status with { SampleNames = names });
+        }
+
+        var live = ApplyHealthFilter(candidates, user, out var dropped);
+
+        // Сгруппированные записи собираются отдельно, чтобы в клиенте идти подряд,
+        // а не вперемешку с серверами провайдера, у которого нашлись.
+        var groups = _options.GroupRules
+            .Select(r => (Rule: r, Items: new List<JsonNode>()))
+            .ToList();
+        var ungrouped = new List<JsonNode>();
+
+        foreach (var candidate in live)
+        {
+            if (candidate.GroupIndex >= 0)
+                groups[candidate.GroupIndex].Items.Add(candidate.Entry);
+            else
+                ungrouped.Add(candidate.Entry);
         }
 
         var configs = new JsonArray();
@@ -153,7 +177,42 @@ public sealed class AggregationService(
         var expire = DateTimeOffset.UtcNow.AddDays(_options.ExpireDays).ToUnixTimeSeconds();
         var info = new SubscriptionUserInfo(upload, download, unlimited ? 0 : total, expire);
 
-        return new AggregatedSubscription(configs, info, statuses, breakdown);
+        return new AggregatedSubscription(configs, info, statuses, breakdown, dropped);
+    }
+
+    /// <summary>Числится ли сервер записи нерабочим.</summary>
+    private static bool IsDead(JsonNode entry, HashSet<string> deadKeys) =>
+        deadKeys.Count > 0 &&
+        ProbeTargets.TryExtract(entry) is { } target &&
+        deadKeys.Contains(target.Key);
+
+    /// <summary>
+    /// Убирает серверы, признанные нерабочими.
+    /// <para>
+    /// Предохранитель: если под нож идёт слишком большая доля записей, фильтр не применяется
+    /// вовсе. Массовое падение почти всегда означает нашу проблему — упавшую сеть или сломанную
+    /// проверку, — а не то, что все провайдеры умерли разом.
+    /// </para>
+    /// </summary>
+    private List<EntryCandidate> ApplyHealthFilter(
+        List<EntryCandidate> candidates,
+        UserSubscriptions user,
+        out int dropped)
+    {
+        dropped = candidates.Count(c => c.Dead);
+        if (dropped == 0)
+            return candidates;
+
+        if (dropped > candidates.Count * _probeOptions.MaxDropFraction)
+        {
+            logger.LogWarning(
+                "Фильтр здоровья для {User} не применён: нерабочими числятся {Dropped} из {Total} серверов",
+                user.UserName, dropped, candidates.Count);
+            dropped = 0;
+            return candidates;
+        }
+
+        return candidates.Where(c => !c.Dead).ToList();
     }
 
     /// <summary>Полный агрегат: серверы провайдеров и блок сгруппированных записей.</summary>
@@ -227,7 +286,7 @@ public sealed class AggregationService(
             // пустой или нераспознанный ответ не должен затирать рабочий снимок.
             if (parsed is { Entries.Count: > 0 })
             {
-                snapshot.ContentGzip = Compress(parsed.Entries);
+                snapshot.ContentGzip = SnapshotContent.Compress(parsed.Entries);
                 snapshot.ConfigCount = parsed.Entries.Count;
                 snapshot.LastFormat = parsed.Format;
                 snapshot.LastError = parsed.Skipped > 0 ? $"Не опознано записей: {parsed.Skipped}" : null;
@@ -282,28 +341,6 @@ public sealed class AggregationService(
         _options.ExcludeNameContains.Any(p =>
             !string.IsNullOrWhiteSpace(p) && name.Contains(p, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>
-    /// Имя записи: у конфига — remarks (запасной вариант — тег первого outbound'а),
-    /// у ссылки — фрагмент после «#».
-    /// </summary>
-    private static string ReadName(JsonNode entry)
-    {
-        if (entry is JsonValue value && value.TryGetValue<string>(out var uri))
-            return ProxyUri.ReadName(uri);
-
-        if (entry is not JsonObject config)
-            return "сервер";
-
-        if (config["remarks"]?.ToString() is { Length: > 0 } remarks)
-            return remarks;
-
-        if (config["outbounds"] is JsonArray { Count: > 0 } outbounds &&
-            outbounds[0]?["tag"]?.ToString() is { Length: > 0 } tag)
-            return tag;
-
-        return "сервер";
-    }
-
     /// <summary>Запись с новым отображаемым именем. Теги outbound'ов не трогаем — на них ссылается роутинг.</summary>
     private static JsonNode WithName(JsonNode entry, string name)
     {
@@ -329,30 +366,5 @@ public sealed class AggregationService(
         }
 
         return entry.ToJsonString();
-    }
-
-    private static byte[] Compress(List<JsonNode> entries)
-    {
-        var json = new JsonArray(entries.Select(e => e.DeepClone()).ToArray()).ToJsonString();
-        var bytes = Encoding.UTF8.GetBytes(json);
-
-        using var output = new MemoryStream();
-        using (var gzip = new GZipStream(output, CompressionLevel.Optimal))
-            gzip.Write(bytes);
-        return output.ToArray();
-    }
-
-    private static List<JsonNode> Decompress(byte[]? gzipped)
-    {
-        if (gzipped is null || gzipped.Length == 0)
-            return [];
-
-        using var input = new MemoryStream(gzipped);
-        using var gzip = new GZipStream(input, CompressionMode.Decompress);
-        using var reader = new StreamReader(gzip, Encoding.UTF8);
-
-        return JsonNode.Parse(reader.ReadToEnd()) is JsonArray array
-            ? array.Where(e => e is not null).Select(e => e!.DeepClone()).ToList()
-            : [];
     }
 }

@@ -173,6 +173,75 @@ namespace VpnDashboard.Data.Migrations
                     b.ToTable("ManualSubscriptions");
                 });
 
+            modelBuilder.Entity("VpnDashboard.Data.Entities.ServerHealth", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ConsecutiveFailures")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsOk")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsSupported")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastCheckAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastError")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastOkAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("LatencyMs")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Method")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Network")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Port")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Protocol")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Security")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Key")
+                        .IsUnique();
+
+                    b.ToTable("ServerHealth");
+                });
+
             modelBuilder.Entity("VpnDashboard.Data.Entities.SubscriptionSnapshot", b =>
                 {
                     b.Property<Guid>("Id")

@@ -7,6 +7,7 @@ using VpnDashboard.Components;
 using VpnDashboard.Data;
 using VpnDashboard.Hiddify;
 using VpnDashboard.Options;
+using VpnDashboard.Probing;
 using VpnDashboard.Security;
 using VpnDashboard.Services;
 using VpnDashboard.Subscriptions;
@@ -44,6 +45,7 @@ builder.Services.Configure<AdminOptions>(builder.Configuration.GetSection(AdminO
 builder.Services.Configure<PingOptions>(builder.Configuration.GetSection(PingOptions.SectionName));
 builder.Services.Configure<ShowcaseOptions>(builder.Configuration.GetSection(ShowcaseOptions.SectionName));
 builder.Services.Configure<AggregationOptions>(builder.Configuration.GetSection(AggregationOptions.SectionName));
+builder.Services.Configure<ProbeOptions>(builder.Configuration.GetSection(ProbeOptions.SectionName));
 
 // База данных (SQLite, путь — из конфига для монтирования в Docker volume).
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
@@ -68,6 +70,13 @@ builder.Services.AddHttpClient<UpstreamSubscriptionFetcher>(c =>
     // Реальный таймаут задаётся на каждый запрос из AggregationOptions; здесь — верхняя граница.
     c.Timeout = TimeSpan.FromSeconds(60);
 });
+
+// Проверка серверов из подписок: нерабочие перестают попадать к пользователям.
+builder.Services.AddSingleton<NetworkProbe>();
+builder.Services.AddSingleton<XrayProbe>();
+builder.Services.AddSingleton<ProbeService>();
+builder.Services.AddScoped<ServerHealthService>();
+builder.Services.AddHostedService<ServerHealthCheckService>();
 
 // Фоновый пинг серверов.
 builder.Services.AddHostedService<ServerPingService>();

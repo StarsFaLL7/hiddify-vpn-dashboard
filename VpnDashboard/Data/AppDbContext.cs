@@ -12,6 +12,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<GlobalSubscription> GlobalSubscriptions => Set<GlobalSubscription>();
     public DbSet<UserGlobalSubscription> UserGlobalSubscriptions => Set<UserGlobalSubscription>();
     public DbSet<SubscriptionSnapshot> SubscriptionSnapshots => Set<SubscriptionSnapshot>();
+    public DbSet<ServerHealth> ServerHealth => Set<ServerHealth>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -54,6 +55,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         b.Entity<SubscriptionSnapshot>(e =>
         {
             e.HasIndex(x => new { x.SourceKind, x.SourceId }).IsUnique();
+        });
+
+        b.Entity<ServerHealth>(e =>
+        {
+            e.HasIndex(x => x.Key).IsUnique();
+            e.Property(x => x.Key).IsRequired();
         });
 
         b.Entity<UserGlobalSubscription>(e =>

@@ -1,0 +1,173 @@
+@page "/health"
+@using Microsoft.Extensions.Options
+@using VpnDashboard.Options
+@using VpnDashboard.Probing
+@inject ServerHealthService HealthService
+@inject XrayProbe XrayProbe
+@inject IOptions<ProbeOptions> ProbeOptions
+@inject ISnackbar Snackbar
+
+<PageTitle>Здоровье серверов</PageTitle>
+
+<MudStack Row AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2">
+    <MudText Typo="Typo.h5">Здоровье серверов</MudText>
+    <MudButton StartIcon="@Icons.Material.Filled.NetworkCheck" Color="Color.Primary" Variant="Variant.Filled"
+               Disabled="_running" OnClick="RunNow">
+        @(_running ? "Проверяем…" : "Проверить сейчас")
+    </MudButton>
+</MudStack>
+
+<MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+    Проверка идёт с этого сервера раз в @Options.IntervalMinutes мин.
+    @if (Options.FilterEnabled)
+    {
+        <text>Сервер перестаёт попадать в подписки после @Options.FailureThreshold неудач подряд;</text>
+        <text> если нерабочими окажутся больше @((int)(Options.MaxDropFraction * 100))% записей, фильтр не применяется.</text>
+    }
+    else
+    {
+        <text>Фильтрация выключена — список только для диагностики.</text>
+    }
+    <br />
+    Подключение проверяется по-настоящему, через ядро Xray:
+    <b>@(_xrayReady ? "ядро доступно" : "ядро недоступно, остаётся только проверка порта")</b>.
+</MudText>
+
+@if (_running)
+{
+    <MudProgressLinear Indeterminate Class="mb-3" />
+}
+
+<MudTable Items="_rows" Loading="_loading" Hover Bordered Dense>
+    <HeaderContent>
+        <MudTh>Сервер</MudTh>
+        <MudTh>Адрес</MudTh>
+        <MudTh>Транспорт</MudTh>
+        <MudTh>Статус</MudTh>
+        <MudTh>Задержка</MudTh>
+        <MudTh>Проверен</MudTh>
+        <MudTh>Примечание</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Сервер">@context.DisplayName</MudTd>
+        <MudTd DataLabel="Адрес">
+            <MudText Typo="Typo.body2">@context.Address:@context.Port</MudText>
+        </MudTd>
+        <MudTd DataLabel="Транспорт">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                @context.Protocol@(string.IsNullOrEmpty(context.Network) ? "" : $" / {context.Network}")@(string.IsNullOrEmpty(context.Security) ? "" : $" / {context.Security}")
+            </MudText>
+        </MudTd>
+        <MudTd DataLabel="Статус">
+            <MudChip T="string" Size="Size.Small" Color="@StatusColor(context)">@StatusLabel(context)</MudChip>
+            @if (context.Method is { Length: > 0 } method && context.IsSupported)
+            {
+                <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">@method</MudText>
+            }
+        </MudTd>
+        <MudTd DataLabel="Задержка">@(context.LatencyMs is { } ms ? $"{ms} мс" : "—")</MudTd>
+        <MudTd DataLabel="Проверен">
+            @if (context.LastCheckAt is { } at)
+            {
+                <MudTooltip Text="@at.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss")">
+                    <span>@Ago(at)</span>
+                </MudTooltip>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">ни разу</MudText>
+            }
+        </MudTd>
+        <MudTd DataLabel="Примечание">
+            @if (!string.IsNullOrEmpty(context.LastError))
+            {
+                <MudText Typo="Typo.caption" Color="@(context.IsSupported ? Color.Error : Color.Default)">
+                    @context.LastError
+                </MudText>
+            }
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>Проверок ещё не было. Они начнутся сами или по кнопке выше.</MudText>
+    </NoRecordsContent>
+</MudTable>
+
+@code {
+    private List<ServerHealth> _rows = [];
+    private bool _loading = true;
+    private bool _running;
+    private bool _xrayReady;
+
+    private ProbeOptions Options => ProbeOptions.Value;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _xrayReady = Options.XrayEnabled && await XrayProbe.IsAvailableAsync(CancellationToken.None);
+        await Reload();
+    }
+
+    private async Task Reload()
+    {
+        _loading = true;
+        _rows = await HealthService.GetAllAsync();
+        _loading = false;
+    }
+
+    private async Task RunNow()
+    {
+        _running = true;
+        StateHasChanged();
+
+        try
+        {
+            var summary = await HealthService.RunAsync();
+            Snackbar.Add(
+                $"Проверено {summary.Targets}: живых {summary.Ok}, нерабочих {summary.Failed}, без проверки {summary.Skipped}",
+                summary.Failed > 0 ? Severity.Warning : Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Проверка сорвалась: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _running = false;
+            await Reload();
+        }
+    }
+
+    private string StatusLabel(ServerHealth row)
+    {
+        if (!row.IsSupported)
+            return "не проверяется";
+        if (row.IsOk)
+            return "работает";
+
+        return row.ConsecutiveFailures >= Options.FailureThreshold
+            ? "исключён"
+            : $"сбой {row.ConsecutiveFailures}";
+    }
+
+    private Color StatusColor(ServerHealth row)
+    {
+        if (!row.IsSupported)
+            return Color.Default;
+        if (row.IsOk)
+            return Color.Success;
+
+        return row.ConsecutiveFailures >= Options.FailureThreshold ? Color.Error : Color.Warning;
+    }
+
+    /// <summary>Давность события словами; точное время — в подсказке.</summary>
+    private static string Ago(DateTime utc)
+    {
+        var span = DateTime.UtcNow - utc;
+        return span switch
+        {
+            { TotalMinutes: < 1 } => "только что",
+            { TotalHours: < 1 } => $"{(int)span.TotalMinutes} мин назад",
+            { TotalDays: < 1 } => $"{(int)span.TotalHours} ч назад",
+            _ => $"{(int)span.TotalDays} дн назад"
+        };
+    }
+}
