@@ -20,6 +20,15 @@ public class GlobalSubscription
     /// <summary>User-Agent для запроса подписки. Пусто — дефолт из конфига.</summary>
     public string? UpstreamUserAgent { get; set; }
 
+    /// <summary>
+    /// Место в списке общих подписок: в этом порядке они показываются в админке
+    /// и попадают в выдачу пользователям.
+    /// </summary>
+    public int Position { get; set; }
+
+    /// <summary>Назначать подписку каждому новому пользователю при его создании.</summary>
+    public bool AssignToNewUsers { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     public DateTime UpdatedAt { get; set; }

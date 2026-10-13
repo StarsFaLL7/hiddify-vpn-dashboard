@@ -4,6 +4,11 @@
 
 <MudDialog>
     <DialogContent>
+        <MudSwitch T="bool" Value="AssignToNewUsers" Color="Color.Primary"
+                   ValueChanged="SetAssignToNewUsers"
+                   Label="Назначать новым пользователям автоматически" />
+        <MudDivider Class="my-2" />
+
         @if (_users is null)
         {
             <MudProgressLinear Indeterminate />
@@ -14,6 +19,11 @@
         }
         else
         {
+            <MudStack Row Spacing="2" Class="mb-1">
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="@(() => SetAll(true))">Всем</MudButton>
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="@(() => SetAll(false))">Никому</MudButton>
+            </MudStack>
+
             @foreach (var u in _users)
             {
                 <MudCheckBox T="bool"
@@ -33,6 +43,8 @@
 
     [Parameter] public Guid GlobalSubscriptionId { get; set; }
 
+    [Parameter] public bool AssignToNewUsers { get; set; }
+
     private List<LocalUser>? _users;
     private HashSet<Guid> _assigned = [];
 
@@ -47,6 +59,18 @@
         await SubscriptionService.SetAssignmentAsync(userId, GlobalSubscriptionId, assigned);
         if (assigned) _assigned.Add(userId);
         else _assigned.Remove(userId);
+    }
+
+    private async Task SetAll(bool assigned)
+    {
+        await SubscriptionService.SetAssignmentForAllAsync(GlobalSubscriptionId, assigned);
+        _assigned = assigned ? _users!.Select(u => u.Id).ToHashSet() : [];
+    }
+
+    private async Task SetAssignToNewUsers(bool value)
+    {
+        await SubscriptionService.SetAssignToNewUsersAsync(GlobalSubscriptionId, value);
+        AssignToNewUsers = value;
     }
 
     private void Close() => MudDialog.Close(DialogResult.Ok(true));

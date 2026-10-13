@@ -16,6 +16,7 @@
         <MudTh>Подпись</MudTh>
         <MudTh>Префикс</MudTh>
         <MudTh>URL</MudTh>
+        <MudTh>Состояние</MudTh>
         <MudTh>Назначена</MudTh>
         <MudTh>Включена</MudTh>
         <MudTh Style="text-align:right">Действия</MudTh>
@@ -24,12 +25,65 @@
         <MudTd DataLabel="Подпись">@context.Label</MudTd>
         <MudTd DataLabel="Префикс">@(context.Prefix ?? "—")</MudTd>
         <MudTd DataLabel="URL"><span class="url-cell">@context.Url</span></MudTd>
-        <MudTd DataLabel="Назначена">@(context.Assignments.Count) польз.</MudTd>
+        <MudTd DataLabel="Состояние">
+            @if (!_states.TryGetValue(context.Id, out var state))
+            {
+                <MudTooltip Text="За подпиской ещё не ходили: её не запрашивал ни один клиент">
+                    <MudChip T="string" Size="Size.Small">нет данных</MudChip>
+                </MudTooltip>
+            }
+            else
+            {
+                @if (state.LastAttemptFailed)
+                {
+                    <MudTooltip Text="@state.LastError">
+                        <MudChip T="string" Color="Color.Error" Size="Size.Small">ошибка</MudChip>
+                    </MudTooltip>
+                }
+                else
+                {
+                    @* Замечание при удачном ответе — провайдер прислал записи, которые не удалось опознать. *@
+                    <MudTooltip Text="@state.LastError" Disabled="@(state.LastError is null)">
+                        <MudChip T="string" Color="@(state.LastError is null ? Color.Success : Color.Warning)" Size="Size.Small">
+                            @state.ConfigCount серв.
+                        </MudChip>
+                    </MudTooltip>
+                }
+                @if (state.FetchedAt is { } fetchedAt)
+                {
+                    <MudTooltip Text="@fetchedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss")">
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                            @(state.LastAttemptFailed ? $"снимок на {state.ConfigCount} серв., {Ago(fetchedAt)}" : Ago(fetchedAt))
+                        </MudText>
+                    </MudTooltip>
+                }
+            }
+        </MudTd>
+        <MudTd DataLabel="Назначена">
+            @(context.Assignments.Count) польз.
+            @if (context.AssignToNewUsers)
+            {
+                <MudTooltip Text="Назначается каждому новому пользователю">
+                    <MudIcon Icon="@Icons.Material.Filled.PersonAdd" Size="Size.Small" Class="ml-1"
+                             Style="vertical-align:middle" />
+                </MudTooltip>
+            }
+        </MudTd>
         <MudTd DataLabel="Включена">
             <MudSwitch T="bool" Value="context.IsEnabled" Color="Color.Primary"
                        ValueChanged="@(v => ToggleEnabled(context, v))" />
         </MudTd>
         <MudTd Style="text-align:right">
+            <MudTooltip Text="Выше">
+                <MudIconButton Icon="@Icons.Material.Filled.ArrowUpward" Size="Size.Small"
+                               Disabled="@(_subs.IndexOf(context) == 0)"
+                               OnClick="@(() => MoveSub(context, -1))" />
+            </MudTooltip>
+            <MudTooltip Text="Ниже">
+                <MudIconButton Icon="@Icons.Material.Filled.ArrowDownward" Size="Size.Small"
+                               Disabled="@(_subs.IndexOf(context) == _subs.Count - 1)"
+                               OnClick="@(() => MoveSub(context, 1))" />
+            </MudTooltip>
             <MudTooltip Text="Кому включено">
                 <MudIconButton Icon="@Icons.Material.Filled.People" Size="Size.Small"
                                OnClick="@(() => AssignSub(context))" />
@@ -51,6 +105,7 @@
 
 @code {
     private List<GlobalSubscription> _subs = [];
+    private Dictionary<Guid, GlobalSourceState> _states = [];
     private bool _loading = true;
 
     protected override async Task OnInitializedAsync() => await Reload();
@@ -59,7 +114,21 @@
     {
         _loading = true;
         _subs = await SubscriptionService.GetAllGlobalAsync();
+        _states = await SubscriptionService.GetGlobalStatesAsync();
         _loading = false;
+    }
+
+    /// <summary>Давность события словами; точное время — в подсказке.</summary>
+    private static string Ago(DateTime utc)
+    {
+        var span = DateTime.UtcNow - utc;
+        return span switch
+        {
+            { TotalMinutes: < 1 } => "только что",
+            { TotalHours: < 1 } => $"{(int)span.TotalMinutes} мин назад",
+            { TotalDays: < 1 } => $"{(int)span.TotalHours} ч назад",
+            _ => $"{(int)span.TotalDays} дн назад"
+        };
     }
 
     private async Task AddSub()
@@ -101,9 +170,19 @@
         sub.IsEnabled = enabled;
     }
 
+    private async Task MoveSub(GlobalSubscription sub, int delta)
+    {
+        await SubscriptionService.MoveGlobalAsync(sub.Id, delta);
+        await Reload();
+    }
+
     private async Task AssignSub(GlobalSubscription sub)
     {
-        var parameters = new DialogParameters { ["GlobalSubscriptionId"] = sub.Id };
+        var parameters = new DialogParameters
+        {
+            ["GlobalSubscriptionId"] = sub.Id,
+            ["AssignToNewUsers"] = sub.AssignToNewUsers
+        };
         var dialog = await DialogService.ShowAsync<GlobalSubAssignDialog>($"Кому включено: {sub.Label}", parameters);
         await dialog.Result;
         await Reload();

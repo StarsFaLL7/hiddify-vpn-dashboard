@@ -13,21 +13,66 @@
                OnClick="AddUser">Новый пользователь</MudButton>
 </MudStack>
 
-<MudTable Items="_users" Loading="_loading" Hover Bordered Dense>
+<MudTable Items="_users" Loading="_loading" Hover Bordered Dense Filter="Matches">
+    <ToolBarContent>
+        <MudTextField @bind-Value="_search" Placeholder="Поиск по имени и комментарию" Immediate Clearable
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      IconSize="Size.Medium" Class="mt-0" />
+    </ToolBarContent>
     <HeaderContent>
-        <MudTh>Имя</MudTh>
-        <MudTh>Активные привязки</MudTh>
+        <MudTh>
+            <MudTableSortLabel SortBy="new Func<LocalUser, object>(u => u.Name)"
+                               InitialDirection="SortDirection.Ascending">Имя</MudTableSortLabel>
+        </MudTh>
+        <MudTh>
+            <MudTableSortLabel SortBy="new Func<LocalUser, object>(u => ServerCount(u))">Серверы</MudTableSortLabel>
+        </MudTh>
+        <MudTh>
+            <MudTableSortLabel SortBy="new Func<LocalUser, object>(u => SubscriptionCount(u))">Подписки</MudTableSortLabel>
+        </MudTh>
         <MudTh>Комментарий</MudTh>
-        <MudTh>Обновлял подписку</MudTh>
-        <MudTh>Создан</MudTh>
+        <MudTh>
+            @* Ни разу не обновлявшие идут как самые давние. *@
+            <MudTableSortLabel SortBy="new Func<LocalUser, object>(u => u.LastSubscriptionFetchAt ?? DateTime.MinValue)">
+                Обновлял подписку
+            </MudTableSortLabel>
+        </MudTh>
+        <MudTh>
+            <MudTableSortLabel SortBy="new Func<LocalUser, object>(u => u.CreatedAt)">Создан</MudTableSortLabel>
+        </MudTh>
         <MudTh Style="text-align:right">Действия</MudTh>
     </HeaderContent>
     <RowTemplate>
         <MudTd DataLabel="Имя">@context.Name</MudTd>
-        <MudTd DataLabel="Активные привязки">
-            <MudChip T="string" Size="Size.Small" Color="@(ActiveCount(context) > 0 ? Color.Success : Color.Default)">
-                @ActiveCount(context)
-            </MudChip>
+        <MudTd DataLabel="Серверы">
+            <MudTooltip Disabled="@(context.Bindings.Count == 0)">
+                <ChildContent>
+                    <MudChip T="string" Size="Size.Small" Color="@(ServerCount(context) > 0 ? Color.Success : Color.Default)">
+                        @ServerCount(context)
+                    </MudChip>
+                </ChildContent>
+                <TooltipContent>
+                    @foreach (var line in ServerLines(context))
+                    {
+                        <div>@line</div>
+                    }
+                </TooltipContent>
+            </MudTooltip>
+        </MudTd>
+        <MudTd DataLabel="Подписки">
+            <MudTooltip Disabled="@(context.GlobalSubscriptions.Count == 0)">
+                <ChildContent>
+                    <MudChip T="string" Size="Size.Small" Color="@(SubscriptionCount(context) > 0 ? Color.Success : Color.Default)">
+                        @SubscriptionCount(context)
+                    </MudChip>
+                </ChildContent>
+                <TooltipContent>
+                    @foreach (var line in SubscriptionLines(context))
+                    {
+                        <div>@line</div>
+                    }
+                </TooltipContent>
+            </MudTooltip>
         </MudTd>
         <MudTd DataLabel="Комментарий">@context.Comment</MudTd>
         <MudTd DataLabel="Обновлял подписку">
@@ -66,6 +111,7 @@
 @code {
     private List<LocalUser> _users = [];
     private bool _loading = true;
+    private string? _search;
 
     protected override async Task OnInitializedAsync() => await Reload();
 
@@ -76,7 +122,27 @@
         _loading = false;
     }
 
-    private static int ActiveCount(LocalUser u) => u.Bindings.Count(b => b is { IsEnabled: true, IsBroken: false });
+    private static int ServerCount(LocalUser u) => u.Bindings.Count(b => b is { IsEnabled: true, IsBroken: false });
+
+    /// <summary>Общие подписки, которые пользователь реально получает: назначенные и не выключенные глобально.</summary>
+    private static int SubscriptionCount(LocalUser u) => u.GlobalSubscriptions.Count(x => x.GlobalSubscription.IsEnabled);
+
+    /// <summary>Все привязки пользователя для подсказки; не попавшие в счётчик — с причиной.</summary>
+    private static IEnumerable<string> ServerLines(LocalUser u) =>
+        u.Bindings
+            .OrderBy(b => b.HiddifyServer.Name)
+            .Select(b => b.HiddifyServer.Name + (b.IsBroken ? " — сломана" : b.IsEnabled ? "" : " — выключена"));
+
+    /// <summary>Все назначенные общие подписки для подсказки; не попавшие в счётчик — с причиной.</summary>
+    private static IEnumerable<string> SubscriptionLines(LocalUser u) =>
+        u.GlobalSubscriptions
+            .OrderBy(x => x.GlobalSubscription.Position)
+            .Select(x => x.GlobalSubscription.Label + (x.GlobalSubscription.IsEnabled ? "" : " — выключена глобально"));
+
+    private bool Matches(LocalUser u) =>
+        string.IsNullOrWhiteSpace(_search) ||
+        u.Name.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase) ||
+        (u.Comment?.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase) ?? false);
 
     /// <summary>Давность события словами; точное время — в подсказке.</summary>
     private static string Ago(DateTime utc)

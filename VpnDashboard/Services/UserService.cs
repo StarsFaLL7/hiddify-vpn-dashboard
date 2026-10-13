@@ -11,7 +11,8 @@ public sealed class UserService(IDbContextFactory<AppDbContext> dbFactory)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         return await db.LocalUsers
-            .Include(u => u.Bindings)
+            .Include(u => u.Bindings).ThenInclude(b => b.HiddifyServer)
+            .Include(u => u.GlobalSubscriptions).ThenInclude(x => x.GlobalSubscription)
             .OrderBy(u => u.Name)
             .AsNoTracking()
             .ToListAsync(ct);
@@ -39,6 +40,16 @@ public sealed class UserService(IDbContextFactory<AppDbContext> dbFactory)
             Comment = string.IsNullOrWhiteSpace(comment) ? null : comment.Trim(),
             ShowcaseToken = TokenGenerator.NewShowcaseToken()
         };
+
+        // Общие подписки с отметкой «назначать новым» достаются пользователю сразу.
+        var autoAssigned = await db.GlobalSubscriptions
+            .Where(g => g.AssignToNewUsers)
+            .Select(g => g.Id)
+            .ToListAsync(ct);
+        user.GlobalSubscriptions = autoAssigned
+            .Select(id => new UserGlobalSubscription { GlobalSubscriptionId = id })
+            .ToList();
+
         db.LocalUsers.Add(user);
         await db.SaveChangesAsync(ct);
         return user;

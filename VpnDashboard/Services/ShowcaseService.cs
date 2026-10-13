@@ -63,10 +63,12 @@ public sealed class ShowcaseService(IDbContextFactory<AppDbContext> dbFactory)
                 m.UpstreamUserAgent));
         }
 
-        // Общие подписки: глобально включённые И назначенные этому пользователю.
+        // Общие подписки: глобально включённые И назначенные этому пользователю,
+        // в порядке, выставленном в админке.
         var globals = await db.UserGlobalSubscriptions
             .Where(x => x.LocalUserId == user.Id && x.GlobalSubscription.IsEnabled)
-            .OrderBy(x => x.GlobalSubscription.Label)
+            .OrderBy(x => x.GlobalSubscription.Position)
+            .ThenBy(x => x.GlobalSubscription.Label)
             .Select(x => x.GlobalSubscription)
             .AsNoTracking()
             .ToListAsync(ct);

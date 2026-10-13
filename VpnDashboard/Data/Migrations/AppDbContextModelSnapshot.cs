@@ -23,6 +23,9 @@ namespace VpnDashboard.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("AssignToNewUsers")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
@@ -32,6 +35,9 @@ namespace VpnDashboard.Data.Migrations
                     b.Property<string>("Label")
                         .IsRequired()
                         .HasColumnType("TEXT");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Prefix")
                         .HasColumnType("TEXT");
