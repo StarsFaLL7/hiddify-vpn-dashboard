@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.Options;
 using VpnDashboard.Options;
 using VpnDashboard.Services;
@@ -79,8 +80,46 @@ public sealed class AggregatedSubscriptionMiddleware(
         await users.MarkSubscriptionFetchedAsync(user.UserId, context.RequestAborted);
 
         WriteHeaders(context, user, variant, result);
-        context.Response.ContentType = "application/json; charset=utf-8";
-        await context.Response.WriteAsync(result.Configs.ToJsonString(), context.RequestAborted);
+
+        var (body, contentType, dropped) = Render(result.Configs);
+        if (dropped > 0)
+            logger.LogWarning(
+                "Агрегация для {User}: {Dropped} ссылок не переводятся в Xray-конфиг и пропущены",
+                user.UserName, dropped);
+
+        context.Response.ContentType = contentType;
+        await context.Response.WriteAsync(body, context.RequestAborted);
+    }
+
+    /// <summary>
+    /// Тело ответа. Клиенты не разбирают JSON-массив, где конфиги-объекты перемешаны со
+    /// ссылками-строками, поэтому записи приводятся к одному виду: одни ссылки уходят обычным
+    /// base64-списком (так сохраняются и протоколы вне Xray), а рядом с конфигами ссылки
+    /// становятся конфигами — непереводимые при этом теряются.
+    /// </summary>
+    private static (string Body, string ContentType, int Dropped) Render(JsonArray entries)
+    {
+        if (entries.All(e => e is not JsonObject))
+        {
+            var links = string.Join('\n', entries.Select(e => SubscriptionEntry.AsUri(e!)).OfType<string>());
+            return (Convert.ToBase64String(Encoding.UTF8.GetBytes(links)), "text/plain; charset=utf-8", 0);
+        }
+
+        var configs = new JsonArray();
+        var dropped = 0;
+
+        foreach (var entry in entries)
+        {
+            if (entry is JsonObject)
+                configs.Add(entry.DeepClone());
+            else if (SubscriptionEntry.AsUri(entry!) is { } uri &&
+                     LinkConfig.TryConvert(uri, ProxyUri.ReadName(uri)) is { } config)
+                configs.Add(config);
+            else
+                dropped++;
+        }
+
+        return (configs.ToJsonString(), "application/json; charset=utf-8", dropped);
     }
 
     private void WriteHeaders(
