@@ -102,7 +102,16 @@ public sealed class AggregationService(
 
                 if (groupIndex >= 0)
                 {
-                    candidates.Add(new EntryCandidate(entry, groupIndex, dead));
+                    // Имя группы: флаг исходного сервера (нет своего — флаг из имени правила),
+                    // префикс провайдера и базовое имя правила без его флага. Порядковый
+                    // номер добавится при выводе блока, когда известен его окончательный состав.
+                    var rule = _options.GroupRules[groupIndex];
+                    var flag = ServerName.LeadingFlag(name);
+                    if (flag.Length == 0)
+                        flag = ServerName.LeadingFlag(rule.Name);
+                    var baseName = ServerName.WithoutLeadingFlag(rule.Name);
+                    var renamed = WithName(entry, $"{flag} [{source.Prefix}] {baseName}".TrimStart());
+                    candidates.Add(new EntryCandidate(renamed, groupIndex, dead));
                 }
                 else
                 {
@@ -235,12 +244,12 @@ public sealed class AggregationService(
             configs.Add(ungrouped[i]);
     }
 
-    /// <summary>Записи одной группы под общим именем со сквозной нумерацией.</summary>
+    /// <summary>Записи одной группы одним блоком; имя проставлено при сборке, здесь добавляется номер.</summary>
     private static void AddGroup(JsonArray configs, (ConfigGroupRule Rule, List<JsonNode> Items) group)
     {
         var index = 1;
         foreach (var entry in group.Items)
-            configs.Add(WithName(entry, $"{group.Rule.Name} #{index++}"));
+            configs.Add(WithName(entry, $"{SubscriptionEntry.Name(entry)} #{index++}"));
     }
 
     /// <summary>Берёт свежий снимок источника из БД либо идёт за ним к провайдеру.</summary>

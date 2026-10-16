@@ -22,6 +22,20 @@ public static class ServerName
         return rest.Length == 0 ? $"{flag} [{prefix}]" : $"{flag} [{prefix}] {rest}";
     }
 
+    /// <summary>Флаг в начале имени либо пустая строка, если флага нет.</summary>
+    public static string LeadingFlag(string name)
+    {
+        var length = LeadingFlagLength(name);
+        return length == 0 ? string.Empty : name[..length];
+    }
+
+    /// <summary>Имя без ведущего флага; имени без флага возвращается как есть.</summary>
+    public static string WithoutLeadingFlag(string name)
+    {
+        var length = LeadingFlagLength(name);
+        return length == 0 ? name : name[length..].TrimStart();
+    }
+
     /// <summary>Длина флага в начале строки (в символах UTF-16); 0 — флага нет.</summary>
     private static int LeadingFlagLength(string name)
     {
