@@ -24,11 +24,15 @@ public sealed class SyntheticIdentity(IOptions<AggregationOptions> aggregation, 
 {
     private readonly byte[] _key = BuildKey(aggregation.Value.HwidSecret, admin.Value.PasswordSalt);
 
-    /// <summary>Детерминированный HWID источника в виде UUID — формат, который ожидают панели.</summary>
+    /// <summary>
+    /// Детерминированный HWID источника: 16 hex-символов без дефисов — как Android ID
+    /// реального устройства. Часть панелей (например, frservice) отдаёт 403 по
+    /// nginx-правилу на HWID в формате UUID с дефисами, поэтому Guid-формат запрещён.
+    /// </summary>
     public string HwidFor(SubscriptionSourceKind kind, Guid sourceId)
     {
         var mac = HMACSHA256.HashData(_key, Encoding.UTF8.GetBytes($"{kind}:{sourceId:N}"));
-        return new Guid(mac.AsSpan(0, 16)).ToString();
+        return Convert.ToHexString(mac, 0, 8).ToLowerInvariant();
     }
 
     private static byte[] BuildKey(string secret, string passwordSalt)
